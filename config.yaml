@@ -1,0 +1,22 @@
+debug_mode: False
+
+role_info:
+    is_client: True
+    id: 'cloud-01'
+
+network_info:
+    ip: '127.0.0.1'
+
+    target_info:
+        # ip: '172.16.10.3'
+        ip: '127.0.0.1'
+
+message_info:
+    img:
+        is_tcp: True
+        port: 20000
+        width: 640
+        height: 480
+    cmd:
+        is_tcp: True
+        port: 20001
