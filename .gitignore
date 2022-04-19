@@ -50,3 +50,7 @@ qtcreator-*
 # Catkin custom files
 CATKIN_IGNORE
 *.log
+proto
+
+maps/*.jpg
+maps/*.png

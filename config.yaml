@@ -12,11 +12,20 @@ network_info:
         ip: '127.0.0.1'
 
 message_info:
-    img:
-        is_tcp: True
-        port: 20000
-        width: 640
-        height: 480
-    cmd:
+    msg:
         is_tcp: True
         port: 20001
+    odm:
+        is_tcp: True
+        port: 20002
+    path:
+        is_tcp: True
+        port: 20003
+    cmd:
+        is_tcp: True
+        port: 20004
+    img:
+        is_tcp: True
+        port: 20005
+        width: 640
+        height: 480
