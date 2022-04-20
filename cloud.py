@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import pygame
+from pygame.locals import K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_UP, K_a, K_d, K_s, K_w
+import evdev
+from evdev import ecodes, InputDevice
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from icecream import ic as print
@@ -38,9 +41,11 @@ BUTTON_LASER_X = 50
 BUTTON_LASER_Y = 200
 BUTTON_SATELLITE_X = 50
 BUTTON_SATELLITE_Y = 350
+BUTTON_JOYSTICK_X = 50
+BUTTON_JOYSTICK_Y = 500
 # read map
-LASER_MAP = pygame.image.load('./maps/laser_map.jpg')
-SATELLITE_MAP = pygame.image.load('./maps/satellite_map.jpg')
+LASER_MAP = pygame.image.load('./maps/laser_map.png')
+SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
 DISPLAY_MAP = LASER_MAP
 map_offset = np.array([0, 0])
 robot_goal = None
@@ -58,22 +63,26 @@ goal_setting = False
 robot_clicked = False
 view_image = False
 box_clicked = False
+use_joystick = False
 
 class Receiver(object):
-    def __init__(self, addr=HOST_ADDRESS, port=23333):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.addr = addr
-        self.port = port
-        self.sock.settimeout(1.0)
-        self.sock.bind((self.addr, self.port))
-        self.thread = threading.Thread(target=self.receive_data)
-        self.thread.start()
+    def __init__(self):
+        self.path_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.path_sock.settimeout(1.0)
+        self.path_sock.bind((HOST_ADDRESS, 23333))
+        self.path_thread = threading.Thread(target=self.receive_path)
+        self.path_thread.start()
+        self.gesture_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.gesture_sock.settimeout(1.0)
+        self.gesture_sock.bind((HOST_ADDRESS, 23335))
+        self.gesture_thread = threading.Thread(target=self.receive_gesture)
+        self.gesture_thread.start()
         self.timeout = False
 
-    def receive_data(self):
+    def receive_path(self):
         while True:
             try:
-                data, _ = self.sock.recvfrom(4096)
+                data, _ = self.path_sock.recvfrom(4096)
                 data = data.decode("utf-8").split(';')
                 MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
                 offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
@@ -81,6 +90,17 @@ class Receiver(object):
                 path_pos = np.array([np.array([float(pos.split(',')[0]), float(pos.split(',')[1])]) + offset
                             for pos in data if pos != ''])
                 # print(path_pos, len(path_pos))
+                self.timeout = False
+            except socket.timeout:
+                self.timeout = True
+            time.sleep(0.01)
+
+    def receive_gesture(self):
+        while True:
+            try:
+                data, _ = self.gesture_sock.recvfrom(4096)
+                gesture = data.decode("utf-8")
+                # print(gesture)
                 self.timeout = False
             except socket.timeout:
                 self.timeout = True
@@ -190,6 +210,51 @@ def screen2pos(x, y):
 def pos2screen(x, y):
     return x, y
 
+def parse_vehicle_wheel(joystick, clock):
+    keys = pygame.key.get_pressed()
+    milliseconds = clock.get_time()
+
+    throttle = 1.0 if keys[K_UP] or keys[K_w] else 0.0
+    steer_increment = 5e-4 * milliseconds
+    if keys[K_LEFT] or keys[K_a]:
+        steer_cache -= steer_increment
+    elif keys[K_RIGHT] or keys[K_d]:
+        steer_cache += steer_increment
+    else:
+        steer_cache = 0.0
+    steer_cache = min(0.7, max(-0.7, steer_cache))
+    steer = round(steer_cache, 1)
+    brake = 1.0 if keys[K_DOWN] or keys[K_s] else 0.0
+
+    numAxes = joystick.get_numaxes()
+    jsInputs = [float(joystick.get_axis(i)) for i in range(numAxes)]
+
+    # Custom function to map range of inputs [1, -1] to outputs [0, 1] i.e 1 from inputs means nothing is pressed
+    # For the steering, it seems fine as it is
+    K1 = 1.0  # 0.55
+    steerCmd = K1 * math.tan(1.1 * jsInputs[0])
+
+    K2 = 1.6  # 1.6
+    throttleCmd = K2 + (2.05 * math.log10(
+        -0.7 * jsInputs[2] + 1.4) - 1.2) / 0.92
+    if throttleCmd <= 0:
+        throttleCmd = 0
+    elif throttleCmd > 1:
+        throttleCmd = 1
+
+    brakeCmd = 1.6 + (2.05 * math.log10(
+        -0.7 * jsInputs[3] + 1.4) - 1.2) / 0.92
+    if brakeCmd <= 0:
+        brakeCmd = 0
+    elif brakeCmd > 1:
+        brakeCmd = 1
+
+    steer = steerCmd
+    brake = brakeCmd
+    throttle = throttleCmd
+
+    return steer, throttle, brake
+
 def drawRobots():
     # for pos, heading, cmd in zip(robot_pos, robot_heading, robot_cmd):
     for pos, heading in zip(robot_pos, robot_heading):
@@ -245,6 +310,13 @@ def drawButton():
     else:
         pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_SATELLITE_X, BUTTON_SATELLITE_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     SCREEN.blit(text, (BUTTON_SATELLITE_X+10, BUTTON_SATELLITE_Y+25))
+    # button: joystick mode
+    text = FONT.render('JOYSTICK', True, WHITE)
+    if (BUTTON_JOYSTICK_X <= mouse[0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[1] <= BUTTON_JOYSTICK_Y + BUTTON_HEIGHT) or use_joystick:
+        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_JOYSTICK_X, BUTTON_JOYSTICK_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    else:
+        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_JOYSTICK_X, BUTTON_JOYSTICK_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    SCREEN.blit(text, (BUTTON_JOYSTICK_X+20, BUTTON_JOYSTICK_Y+25))
 
 def drawMessageBox():
     # font settings
@@ -292,17 +364,31 @@ def drawMaps():
     map_pos = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2]) + map_offset
     SCREEN.blit(DISPLAY_MAP, map_pos)
 
+
 if __name__ == "__main__":
     pygame.init()
     SCREEN = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))#, pygame.RESIZABLE)
     pygame.display.set_caption('5G Monitor')
-    # icon = pygame.image.load('*.png')
-    # pygame.display.set_icon(icon)
+    icon = pygame.image.load('icon.png')
+    pygame.display.set_icon(icon)
     CLOCK = pygame.time.Clock()
     SCREEN.fill(GREY)
     data_receiver = Receiver()
+    # 5G server setup
     try:
         server = Cloud(config = 'config.yaml')
+    except:
+        pass
+    # joystick setup
+    try:
+        device = evdev.list_devices()[0]
+        evtdev = InputDevice(device)
+        val = 25000 #[0,65535]
+        evtdev.write(ecodes.EV_FF, ecodes.FF_AUTOCENTER, val)
+        pygame.joystick.init()
+        joystick_count = pygame.joystick.get_count()
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
     except:
         pass
 
@@ -343,6 +429,9 @@ if __name__ == "__main__":
                 # button: satellite map
                 elif BUTTON_SATELLITE_X <= mouse[0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT:
                     DISPLAY_MAP = SATELLITE_MAP
+                # button: joystick mode
+                elif BUTTON_JOYSTICK_X <= mouse[0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[1] <= BUTTON_JOYSTICK_Y + BUTTON_HEIGHT:
+                    use_joystick = not use_joystick
                 # button: robot
                 if robot_clicked:
                     # button: view image
@@ -382,6 +471,10 @@ if __name__ == "__main__":
                     end_pos = event.pos
                     map_offset = map_offset + end_pos - start_pos
                     start_pos = end_pos
+            elif event.type == pygame.JOYBUTTONDOWN:
+                print("Joystick button pressed.")
+            elif event.type == pygame.JOYBUTTONUP:
+                print("Joystick button released.")
 
         # send goal
         if robot_goal is not None:
@@ -395,7 +488,16 @@ if __name__ == "__main__":
                 view_image = False
                 cv2.destroyAllWindows()
 
+        # parse joystick
+        if use_joystick:
+            try:
+                steer, throttle, brake = parse_vehicle_wheel(joystick, CLOCK)
+                print(steer, throttle, brake)
+            except:
+                pass
+
         pygame.display.update()
+        CLOCK.tick(20)
         end_time = time.time()
         # print('frequency', 1/(end_time-start_time))
         if end_time-start_time < 1./30:
