@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from os import wait
 import pygame
 from pygame.locals import K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_UP, K_a, K_d, K_s, K_w
 import evdev
@@ -17,7 +18,7 @@ import cv2
 from shapely.geometry import Polygon, Point
 
 from informer import Informer
-from proto.python_out import marker_msgs_pb2, geometry_msgs_pb2, path_msgs_pb2, cmd_msgs_pb2
+from proto.python_out import marker_msgs_pb2, geometry_msgs_pb2, path_msgs_pb2, cmd_msgs_pb2, ctrl_msgs_pb2
 # from config_5g import cfg_server
 
 
@@ -57,14 +58,16 @@ path_pos = []
 robot_clicked_id = None
 robot_img = None
 box_clicked_id = None
+ifm = None
 # flags
+use_laser_map = True
+use_satellite_map = False
 map_draging = False
 goal_setting = False
 robot_clicked = False
 view_image = False
 box_clicked = False
 use_joystick = False
-
 class Receiver(object):
     def __init__(self):
         self.path_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -172,7 +175,19 @@ def send_path(path_list):
 
     sent_data = path.SerializeToString()
     # print('send', len(sent_data))
-    ifm.send_path(sent_data)
+    if ifm is not None:
+        ifm.send_path(sent_data)
+
+def send_ctrl(v, w, flag=1.):
+    global ifm
+    ctrl_cmd = ctrl_msgs_pb2.Ctrl()
+    ctrl_cmd.flag = flag
+    ctrl_cmd.v = v
+    ctrl_cmd.w = w
+    print('send ctrl:', ctrl_cmd)
+    sent_data = ctrl_cmd.SerializeToString()
+    if ifm is not None:
+        ifm.send_ctrl(sent_data)
 
 class Cloud(Informer):
     def msg_recv(self):
@@ -190,6 +205,12 @@ class Cloud(Informer):
     def send_path(self, message):
         self.send(message, 'path')
 
+    def send_ctrl(self, message):
+        self.send(message, 'ctrl')
+
+def start_ifm():
+    global ifm
+    ifm = Cloud(config = 'config.yaml')
 
 def sendGoal(goal):
     goal_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -298,14 +319,14 @@ def drawButton():
     SCREEN.blit(text, (BUTTON_GOAL_X+45, BUTTON_GOAL_Y+25))
     # button: laser map
     text = FONT.render('LASER', True, WHITE)
-    if BUTTON_LASER_X <= mouse[0] <= BUTTON_LASER_X + BUTTON_WIDTH and BUTTON_LASER_Y <= mouse[1] <= BUTTON_LASER_Y + BUTTON_HEIGHT:
+    if (BUTTON_LASER_X <= mouse[0] <= BUTTON_LASER_X + BUTTON_WIDTH and BUTTON_LASER_Y <= mouse[1] <= BUTTON_LASER_Y + BUTTON_HEIGHT) or use_laser_map:
         pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_LASER_X, BUTTON_LASER_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     else:
         pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_LASER_X, BUTTON_LASER_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     SCREEN.blit(text, (BUTTON_LASER_X+60, BUTTON_LASER_Y+25))
     # button: satellite map
     text = FONT.render('SATELLITE', True, WHITE)
-    if BUTTON_SATELLITE_X <= mouse[0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT:
+    if (BUTTON_SATELLITE_X <= mouse[0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT) or use_satellite_map:
         pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_SATELLITE_X, BUTTON_SATELLITE_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     else:
         pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_SATELLITE_X, BUTTON_SATELLITE_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
@@ -358,6 +379,16 @@ def drawMessageBox():
             pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_ID_X, BUTTON_ID_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
         SCREEN.blit(text, (BUTTON_ID_X+75, BUTTON_ID_Y+25))
 
+def drawJoystick(steer, throttle, brake):
+    # font settings
+    FONT = pygame.font.SysFont('Corbel', 50)
+    text = FONT.render('steer {:.2f}'.format(steer), True, BLUE)
+    SCREEN.blit(text, (BUTTON_JOYSTICK_X+325, BUTTON_JOYSTICK_Y))
+    text = FONT.render('throttle {:.2f}'.format(throttle), True, BLUE)
+    SCREEN.blit(text, (BUTTON_JOYSTICK_X+325, BUTTON_JOYSTICK_Y+35))
+    text = FONT.render('brake {:.2f}'.format(brake), True, BLUE)
+    SCREEN.blit(text, (BUTTON_JOYSTICK_X+325, BUTTON_JOYSTICK_Y+70))
+
 def drawMaps():
     WINDOW_WIDTH, WINDOW_HEIGHT = pygame.display.get_surface().get_size()
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
@@ -375,10 +406,10 @@ if __name__ == "__main__":
     SCREEN.fill(GREY)
     data_receiver = Receiver()
     # 5G server setup
-    try:
-        server = Cloud(config = 'config.yaml')
-    except:
-        pass
+    start_thread = threading.Thread(
+        target = start_ifm, args=()
+    )
+    start_thread.start()
     # joystick setup
     try:
         device = evdev.list_devices()[0]
@@ -426,12 +457,18 @@ if __name__ == "__main__":
                 # button: laser map
                 elif BUTTON_LASER_X <= mouse[0] <= BUTTON_LASER_X + BUTTON_WIDTH and BUTTON_LASER_Y <= mouse[1] <= BUTTON_LASER_Y + BUTTON_HEIGHT:
                     DISPLAY_MAP = LASER_MAP
+                    use_laser_map = True
+                    use_satellite_map = False
                 # button: satellite map
                 elif BUTTON_SATELLITE_X <= mouse[0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT:
                     DISPLAY_MAP = SATELLITE_MAP
+                    use_laser_map = False
+                    use_satellite_map = True
                 # button: joystick mode
                 elif BUTTON_JOYSTICK_X <= mouse[0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[1] <= BUTTON_JOYSTICK_Y + BUTTON_HEIGHT:
                     use_joystick = not use_joystick
+                    if not use_joystick:
+                        send_ctrl(0., 0., flag=0.) # auto mode
                 # button: robot
                 if robot_clicked:
                     # button: view image
@@ -492,7 +529,12 @@ if __name__ == "__main__":
         if use_joystick:
             try:
                 steer, throttle, brake = parse_vehicle_wheel(joystick, CLOCK)
-                print(steer, throttle, brake)
+                if abs(steer) < 0.05: steer = 0.
+                # print(steer, throttle, brake)
+                drawJoystick(steer, throttle, brake)
+                v = 2*throttle if brake < 0.1 else 0.
+                w = steer*5.
+                send_ctrl(v, w, flag=1.) # manual ctrl
             except:
                 pass
 
