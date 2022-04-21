@@ -8,7 +8,7 @@ network_info:
     ip: '127.0.0.1'
 
     target_info:
-        # ip: '172.16.10.3'
+        #ip: '172.16.10.3'
         ip: '127.0.0.1'
 
 message_info:
@@ -29,3 +29,6 @@ message_info:
         port: 20005
         width: 640
         height: 480
+    ctrl:
+        is_tcp: True
+        port: 20006

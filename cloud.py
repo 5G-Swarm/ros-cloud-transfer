@@ -117,7 +117,7 @@ def parse_message(message):
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
     for marker in marker_list.marker_list:
         try:
-            center_pos = np.array([int(marker.pose.position.y*(-20)+2089), int(2949-20*marker.pose.position.x)]) + offset
+            center_pos = np.array([int(marker.pose.position.y*(-20)+2033), int(2733-20*marker.pose.position.x)]) + offset
             orientation = R.from_quat([marker.pose.orientation.x, marker.pose.orientation.y, marker.pose.orientation.z, marker.pose.orientation.w]).as_euler('xyz', degrees=False)[2]
             orientation += np.pi / 2
             height, width = 10*marker.scale.x, 10*marker.scale.y
@@ -147,7 +147,7 @@ def parse_odometry(message):
     odometry.ParseFromString(message)
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
-    robot_pos = [np.array([int(odometry.position.y*(-20)+2089), int(2949-20*odometry.position.x)]) + offset]
+    robot_pos = [np.array([int(odometry.position.y*(-20)+2033), int(2733-20*odometry.position.x)]) + offset]
     robot_heading = [R.from_quat([odometry.orientation.x, odometry.orientation.y, odometry.orientation.z, odometry.orientation.w]).as_euler('xyz', degrees=False)[2]]
 
 def parse_cmd(message):
