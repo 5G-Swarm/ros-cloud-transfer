@@ -50,11 +50,17 @@ SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
 DISPLAY_MAP = LASER_MAP
 map_offset = np.array([0, 0])
 robot_goal = None
+fixed_goal = [np.array([972,903]),
+              np.array([1218,139]),
+              np.array([1231,-895]),
+              np.array([593,-877]),
+              np.array([690,152])]
 robot_pos = []
 robot_heading = []
 robot_cmd = []
 bounding_box = dict()
 path_pos = []
+path_pos = np.array([np.array([1., 2.])]*40)
 robot_clicked_id = None
 robot_img = None
 box_clicked_id = None
@@ -65,7 +71,7 @@ use_satellite_map = False
 map_draging = False
 goal_setting = False
 robot_clicked = False
-view_image = False
+view_image = True
 box_clicked = False
 use_joystick = False
 class Receiver(object):
@@ -83,13 +89,13 @@ class Receiver(object):
         self.timeout = False
 
     def receive_path(self):
+        global path_pos
         while True:
             try:
                 data, _ = self.path_sock.recvfrom(4096)
                 data = data.decode("utf-8").split(';')
                 MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
                 offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
-                global path_pos
                 path_pos = np.array([np.array([float(pos.split(',')[0]), float(pos.split(',')[1])]) + offset
                             for pos in data if pos != ''])
                 # print(path_pos, len(path_pos))
@@ -104,11 +110,22 @@ class Receiver(object):
                 data, _ = self.gesture_sock.recvfrom(4096)
                 gesture = data.decode("utf-8")
                 # print(gesture)
+                global robot_goal
+                if gesture == 'Number 1':
+                    robot_goal = fixed_goal[0]
+                elif gesture == 'Number 2':
+                    robot_goal = fixed_goal[1]
+                elif gesture == 'Number 3':
+                    robot_goal = fixed_goal[2]
+                elif gesture == 'Number 4':
+                    robot_goal = fixed_goal[3]
+                elif gesture == 'Number 5':
+                    robot_goal = fixed_goal[4]
                 self.timeout = False
             except socket.timeout:
                 self.timeout = True
             time.sleep(0.01)
-            
+
 def parse_message(message):
     global bounding_box
     marker_list = marker_msgs_pb2.MarkerList()
@@ -174,7 +191,7 @@ def send_path(path_list):
         path.poses.append(pose)
 
     sent_data = path.SerializeToString()
-    # print('send', len(sent_data))
+    print('send', len(sent_data))
     if ifm is not None:
         ifm.send_path(sent_data)
 
@@ -303,6 +320,12 @@ def drawPath():
     if len(path_pos) > 1:
         pygame.draw.lines(SCREEN, RED, False, path_pos + map_offset, 10)
 
+def drawFixedGoal():
+    for idx, goal in enumerate(fixed_goal):
+        FONT = pygame.font.SysFont('Corbel', 100)
+        text = FONT.render('{}'.format(idx+1), True, GREEN)
+        SCREEN.blit(text, goal + map_offset + np.array([-25, -25]))
+
 def drawButton():
     # font settings
     FONT = pygame.font.SysFont('Corbel', 75)
@@ -429,12 +452,16 @@ if __name__ == "__main__":
         cnt += 1
         SCREEN.fill(GREY)
         drawMaps()
+        drawFixedGoal()
         drawGoal()
         drawRobots()
         drawBoundingBox()
         drawPath()
         drawButton()
         drawMessageBox()
+
+        if len(path_pos) > 1 and cnt % 5 == 0:
+            send_path(path_pos)
 
         for event in pygame.event.get():
             mods = pygame.key.get_mods()
@@ -520,6 +547,7 @@ if __name__ == "__main__":
         
         # view image
         if view_image and robot_img is not None:
+            # new_img = cv2.resize(robot_img, (1280, 960))
             cv2.imshow('Robot Image', robot_img)
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 view_image = False

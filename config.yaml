@@ -8,8 +8,8 @@ network_info:
     ip: '127.0.0.1'
 
     target_info:
-        #ip: '172.16.10.3'
-        ip: '127.0.0.1'
+        ip: '172.16.10.3'
+        #ip: '127.0.0.1'
 
 message_info:
     msg:
