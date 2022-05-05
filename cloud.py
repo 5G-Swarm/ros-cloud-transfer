@@ -62,11 +62,12 @@ robot_cmd = []
 bounding_box = dict()
 path_pos = []
 new_path_pos =[]
-# path_pos = np.array([np.array([0., 0.])]*20)
 robot_clicked_id = None
 robot_img = None
 box_clicked_id = None
 ifm = None
+rect_start_pos = None
+rect_end_pos = None
 # flags
 use_laser_map = True
 use_satellite_map = False
@@ -76,6 +77,15 @@ robot_clicked = False
 view_image = True
 box_clicked = False
 use_joystick = False
+rect_select = False
+
+class Robot():
+    def __init__(self, id, pos, heading, cmd):
+        self.id = id
+        self.pos = pos
+        self.heading = heading
+        self.cmd = cmd
+
 class Receiver(object):
     def __init__(self):
         self.path_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -334,6 +344,10 @@ def drawFixedGoal():
         text = FONT.render('{}'.format(idx+1), True, GREEN)
         SCREEN.blit(text, goal + map_offset + np.array([-25, -25]))
 
+def drawRectSelections():
+    if rect_select and rect_start_pos is not None and rect_end_pos is not None:
+        pygame.draw.rect(SCREEN, GREY, [rect_start_pos, np.array(rect_end_pos) - np.array(rect_start_pos)], 5)
+
 def drawButton():
     # font settings
     FONT = pygame.font.SysFont('Corbel', 75)
@@ -472,6 +486,7 @@ if __name__ == "__main__":
         drawPath()
         drawButton()
         drawMessageBox()
+        drawRectSelections()
 
         if len(path_pos) > 1 and cnt % 5 == 0:
             # print('send path')
@@ -484,9 +499,13 @@ if __name__ == "__main__":
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.MOUSEBUTTONDOWN and mods & pygame.KMOD_CTRL:
-                if event.button == 1:            
+                if event.button == 1:
                     map_draging = True
-                    start_pos = event.pos
+                    drag_start_pos = event.pos
+            elif event.type == pygame.MOUSEBUTTONDOWN and mods & pygame.KMOD_ALT:
+                if event.button == 1:
+                    rect_select = True
+                    rect_start_pos = event.pos
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 # get mouse position
                 mouse = pygame.mouse.get_pos()
@@ -510,7 +529,6 @@ if __name__ == "__main__":
                 # button: joystick mode
                 elif BUTTON_JOYSTICK_X <= mouse[0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[1] <= BUTTON_JOYSTICK_Y + BUTTON_HEIGHT:
                     use_joystick = not use_joystick
-                    print('ggggg', use_joystick)
                     if not use_joystick:
                         print('set zero')
                         for _ in range(10):
@@ -547,14 +565,25 @@ if __name__ == "__main__":
                         box_clicked = True
                         box_clicked_id = idx
                         break
-            elif event.type == pygame.MOUSEBUTTONUP and mods & pygame.KMOD_CTRL:
-                if event.button == 1:            
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
                     map_draging = False
+                    if rect_select:
+                        p2 = Polygon(np.array([rect_start_pos, (rect_start_pos[0], rect_end_pos[1]), rect_end_pos, (rect_end_pos[0], rect_start_pos[1])]))
+                        for idx, pos in enumerate(robot_pos):
+                            p1 = Point(pos + map_offset)
+                            if p2.contains(p1):
+                                print('select robot', idx)
+                        rect_select = False
+                        rect_start_pos = rect_end_pos = None
             elif event.type == pygame.MOUSEMOTION and mods & pygame.KMOD_CTRL:
                 if map_draging:
-                    end_pos = event.pos
-                    map_offset = map_offset + end_pos - start_pos
-                    start_pos = end_pos
+                    drag_end_pos = event.pos
+                    map_offset = map_offset + drag_end_pos - drag_start_pos
+                    drag_start_pos = drag_end_pos
+            elif event.type == pygame.MOUSEMOTION and mods & pygame.KMOD_ALT:
+                if rect_select:
+                    rect_end_pos = event.pos
             elif event.type == pygame.JOYBUTTONDOWN:
                 print("Joystick button pressed.")
             elif event.type == pygame.JOYBUTTONUP:
