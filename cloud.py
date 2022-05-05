@@ -50,8 +50,9 @@ SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
 DISPLAY_MAP = LASER_MAP
 map_offset = np.array([0, 0])
 robot_goal = None
-fixed_goal = [np.array([972,903]),
-              np.array([1218,139]),
+# fixed_goal = [np.array([999,371]),
+fixed_goal = [np.array([1218,139]),
+              np.array([1250,-300]),
               np.array([1231,-895]),
               np.array([593,-877]),
               np.array([690,152])]
@@ -60,7 +61,8 @@ robot_heading = []
 robot_cmd = []
 bounding_box = dict()
 path_pos = []
-path_pos = np.array([np.array([1., 2.])]*40)
+new_path_pos =[]
+# path_pos = np.array([np.array([0., 0.])]*20)
 robot_clicked_id = None
 robot_img = None
 box_clicked_id = None
@@ -89,7 +91,7 @@ class Receiver(object):
         self.timeout = False
 
     def receive_path(self):
-        global path_pos
+        global path_pos, new_path_pos
         while True:
             try:
                 data, _ = self.path_sock.recvfrom(4096)
@@ -97,6 +99,8 @@ class Receiver(object):
                 MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
                 offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
                 path_pos = np.array([np.array([float(pos.split(',')[0]), float(pos.split(',')[1])]) + offset
+                            for pos in data if pos != ''])
+                new_path_pos = np.array([np.array([float(pos.split(',')[0]), float(pos.split(',')[1])])
                             for pos in data if pos != ''])
                 # print(path_pos, len(path_pos))
                 self.timeout = False
@@ -126,7 +130,7 @@ class Receiver(object):
                 self.timeout = True
             time.sleep(0.01)
 
-def parse_message(message):
+def parse_message(message): 
     global bounding_box
     marker_list = marker_msgs_pb2.MarkerList()
     marker_list.ParseFromString(message)
@@ -165,6 +169,7 @@ def parse_odometry(message):
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
     robot_pos = [np.array([int(odometry.position.y*(-20)+2033), int(2733-20*odometry.position.x)]) + offset]
+    # robot_pos = [np.array([int(odometry.position.y*(-20)+1745), int(2461-20*odometry.position.x)]) + offset]
     robot_heading = [R.from_quat([odometry.orientation.x, odometry.orientation.y, odometry.orientation.z, odometry.orientation.w]).as_euler('xyz', degrees=False)[2]]
 
 def parse_cmd(message):
@@ -181,17 +186,19 @@ def parse_img(message):
 
 def send_path(path_list):
     global ifm
+    print(len(path_list[:20]))
     path = path_msgs_pb2.Path()
-    for i in range(len(path_list)):
+    for i in range(len(path_list[:20])):
         pose = path_msgs_pb2.Pose2D()
         pose.x = path_list[i][0]
-        pose.y = path_list[i][0]
-        pose.theta = path_list[i][0]
+        pose.y = path_list[i][1]
+        pose.theta = 0#path_list[i][2]
 
         path.poses.append(pose)
 
+    # print(path)
     sent_data = path.SerializeToString()
-    print('send', len(sent_data))
+    # print('send', len(sent_data))
     if ifm is not None:
         ifm.send_path(sent_data)
 
@@ -200,10 +207,11 @@ def send_ctrl(v, w, flag=1.):
     ctrl_cmd = ctrl_msgs_pb2.Ctrl()
     ctrl_cmd.flag = flag
     ctrl_cmd.v = v
-    ctrl_cmd.w = w
-    print('send ctrl:', ctrl_cmd)
+    ctrl_cmd.w = -w
+    # print('send ctrl:', ctrl_cmd)
     sent_data = ctrl_cmd.SerializeToString()
     if ifm is not None:
+        # print('send ctrl success')
         ifm.send_ctrl(sent_data)
 
 class Cloud(Informer):
@@ -433,6 +441,7 @@ if __name__ == "__main__":
         target = start_ifm, args=()
     )
     start_thread.start()
+    # start_ifm()
     # joystick setup
     try:
         device = evdev.list_devices()[0]
@@ -445,6 +454,10 @@ if __name__ == "__main__":
         joystick.init()
     except:
         pass
+    
+    # while ifm is None:
+    #     time.sleep(0.1)
+    #     print(ifm)
 
     cnt = 0
     while True:
@@ -461,7 +474,9 @@ if __name__ == "__main__":
         drawMessageBox()
 
         if len(path_pos) > 1 and cnt % 5 == 0:
-            send_path(path_pos)
+            # print('send path')
+            # send_path(path_pos)
+            send_path(new_path_pos)
 
         for event in pygame.event.get():
             mods = pygame.key.get_mods()
@@ -481,6 +496,7 @@ if __name__ == "__main__":
                 elif goal_setting:
                     goal_setting = False
                     robot_goal = mouse - map_offset
+                    print(robot_goal)
                 # button: laser map
                 elif BUTTON_LASER_X <= mouse[0] <= BUTTON_LASER_X + BUTTON_WIDTH and BUTTON_LASER_Y <= mouse[1] <= BUTTON_LASER_Y + BUTTON_HEIGHT:
                     DISPLAY_MAP = LASER_MAP
@@ -494,8 +510,12 @@ if __name__ == "__main__":
                 # button: joystick mode
                 elif BUTTON_JOYSTICK_X <= mouse[0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[1] <= BUTTON_JOYSTICK_Y + BUTTON_HEIGHT:
                     use_joystick = not use_joystick
+                    print('ggggg', use_joystick)
                     if not use_joystick:
-                        send_ctrl(0., 0., flag=0.) # auto mode
+                        print('set zero')
+                        for _ in range(10):
+                            send_ctrl(1., 1., flag=0.) # auto mode
+                            time.sleep(0.01)
                 # button: robot
                 if robot_clicked:
                     # button: view image
