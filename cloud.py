@@ -19,10 +19,10 @@ from utils import *
 
 
 # read map
-LASER_MAP = pygame.image.load('./maps/laser_map.png')
+BAIDU_MAP = pygame.image.load('./maps/yuquan.png')
 SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
-DISPLAY_MAP = SATELLITE_MAP
-map_offset = np.array([0, 0])
+DISPLAY_MAP = BAIDU_MAP
+map_offset = np.array([1700, -100])
 robot_goal = None
 fixed_goal = [np.array([1218,139]),
               np.array([1250,-300]),
@@ -39,8 +39,8 @@ ifm_dict = {}
 rect_start_pos = None
 rect_end_pos = None
 # flags
-use_laser_map = False
-use_satellite_map = True
+use_baidu_map = True
+use_satellite_map = False
 map_draging = False
 goal_setting = False
 robot_clicked = False
@@ -166,12 +166,13 @@ def start_ifm():
     for i in range(1, 11):
         ifm_dict[i] = Cloud(config = 'config.yaml', robot_id = i)
 
-def screen2pos(x, y):
+def screen2gps(x, y):
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     pos = np.array([x, y]) - np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
     return pos
 
-def pos2screen(x, y):
+def gps2screen(x, y):
+    MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     return x, y
 
 
@@ -190,10 +191,7 @@ if __name__ == "__main__":
     )
     start_thread.start()
     # joystick setup
-    try:
-        setup_joystick()
-    except:
-        pass
+    setup_joystick()
 
     cnt = 0
     while True:
@@ -206,7 +204,7 @@ if __name__ == "__main__":
         drawRobots(SCREEN, robot_dict, map_offset)
         drawBoundingBox(SCREEN, bounding_box, map_offset)
         drawPath(SCREEN, path_pos, map_offset)
-        drawButton(SCREEN, use_laser_map, use_satellite_map, use_joystick)
+        drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick)
         drawMessageBox(SCREEN, map_offset, robot_clicked, robot_clicked_id, robot_dict, box_clicked, box_clicked_id, bounding_box)
         drawRectSelections(SCREEN, rect_select, rect_start_pos, rect_end_pos)
 
@@ -238,15 +236,15 @@ if __name__ == "__main__":
                     goal_setting = False
                     robot_goal = mouse - map_offset
                     print(robot_goal)
-                # button: laser map
-                elif BUTTON_LASER_X <= mouse[0] <= BUTTON_LASER_X + BUTTON_WIDTH and BUTTON_LASER_Y <= mouse[1] <= BUTTON_LASER_Y + BUTTON_HEIGHT:
-                    DISPLAY_MAP = LASER_MAP
-                    use_laser_map = True
+                # button: baidu map
+                elif BUTTON_BAIDU_X <= mouse[0] <= BUTTON_BAIDU_X + BUTTON_WIDTH and BUTTON_BAIDU_Y <= mouse[1] <= BUTTON_BAIDU_Y + BUTTON_HEIGHT:
+                    DISPLAY_MAP = BAIDU_MAP
+                    use_baidu_map = True
                     use_satellite_map = False
                 # button: satellite map
                 elif BUTTON_SATELLITE_X <= mouse[0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT:
                     DISPLAY_MAP = SATELLITE_MAP
-                    use_laser_map = False
+                    use_baidu_map = False
                     use_satellite_map = True
                 # button: joystick mode
                 elif BUTTON_JOYSTICK_X <= mouse[0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[1] <= BUTTON_JOYSTICK_Y + BUTTON_HEIGHT:
@@ -314,7 +312,7 @@ if __name__ == "__main__":
         # send goal
         if robot_goal is not None:
             if cnt % 10 == 0: 
-                sendGoal(robot_dict, screen2pos(*robot_goal))
+                sendGoal(robot_dict, screen2gps(*robot_goal))
 
         # view image
         if view_image:

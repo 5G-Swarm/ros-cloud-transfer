@@ -22,8 +22,8 @@ BUTTON_LIGHT = (170, 170, 170)
 BUTTON_DARK = (100, 100, 100)
 BUTTON_GOAL_X = 50
 BUTTON_GOAL_Y = 50
-BUTTON_LASER_X = 50
-BUTTON_LASER_Y = 200
+BUTTON_BAIDU_X = 50
+BUTTON_BAIDU_Y = 200
 BUTTON_SATELLITE_X = 50
 BUTTON_SATELLITE_Y = 350
 BUTTON_JOYSTICK_X = 50
@@ -31,14 +31,17 @@ BUTTON_JOYSTICK_Y = 500
 
 
 def setup_joystick():
-    device = evdev.list_devices()[0]
-    evtdev = InputDevice(device)
-    val = 25000 #[0,65535]
-    evtdev.write(ecodes.EV_FF, ecodes.FF_AUTOCENTER, val)
-    pygame.joystick.init()
-    joystick_count = pygame.joystick.get_count()
-    joystick = pygame.joystick.Joystick(0)
-    joystick.init()
+    try:
+        device = evdev.list_devices()[0]
+        evtdev = InputDevice(device)
+        val = 25000 #[0,65535]
+        evtdev.write(ecodes.EV_FF, ecodes.FF_AUTOCENTER, val)
+        pygame.joystick.init()
+        joystick_count = pygame.joystick.get_count()
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+    except:
+        print('JOYSTICK NOT CONNECTED!!!')
 
 def parse_vehicle_wheel(joystick, clock):
     keys = pygame.key.get_pressed()
@@ -133,7 +136,7 @@ def drawPath(SCREEN, path_pos, map_offset):
     if len(path_pos) > 1:
         pygame.draw.lines(SCREEN, RED, False, path_pos + map_offset, 10)
 
-def drawButton(SCREEN, use_laser_map, use_satellite_map, use_joystick):
+def drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick):
     # font settings
     FONT = pygame.font.SysFont('Corbel', 75)
 
@@ -147,13 +150,13 @@ def drawButton(SCREEN, use_laser_map, use_satellite_map, use_joystick):
     else:
         pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_GOAL_X, BUTTON_GOAL_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     SCREEN.blit(text, (BUTTON_GOAL_X+45, BUTTON_GOAL_Y+25))
-    # button: laser map
-    text = FONT.render('LASER', True, WHITE)
-    if (BUTTON_LASER_X <= mouse[0] <= BUTTON_LASER_X + BUTTON_WIDTH and BUTTON_LASER_Y <= mouse[1] <= BUTTON_LASER_Y + BUTTON_HEIGHT) or use_laser_map:
-        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_LASER_X, BUTTON_LASER_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    # button: baidu map
+    text = FONT.render('BAIDU', True, WHITE)
+    if (BUTTON_BAIDU_X <= mouse[0] <= BUTTON_BAIDU_X + BUTTON_WIDTH and BUTTON_BAIDU_Y <= mouse[1] <= BUTTON_BAIDU_Y + BUTTON_HEIGHT) or use_baidu_map:
+        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_BAIDU_X, BUTTON_BAIDU_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     else:
-        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_LASER_X, BUTTON_LASER_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
-    SCREEN.blit(text, (BUTTON_LASER_X+60, BUTTON_LASER_Y+25))
+        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_BAIDU_X, BUTTON_BAIDU_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    SCREEN.blit(text, (BUTTON_BAIDU_X+60, BUTTON_BAIDU_Y+25))
     # button: satellite map
     text = FONT.render('SATELLITE', True, WHITE)
     if (BUTTON_SATELLITE_X <= mouse[0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT) or use_satellite_map:
