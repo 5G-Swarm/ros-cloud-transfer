@@ -22,13 +22,9 @@ from utils import *
 BAIDU_MAP = pygame.image.load('./maps/yuquan.png')
 SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
 DISPLAY_MAP = BAIDU_MAP
-map_offset = np.array([1700, -100])
+map_offset = np.array([0, -1200])
 robot_goal = None
-fixed_goal = [np.array([1218,139]),
-              np.array([1250,-300]),
-              np.array([1231,-895]),
-              np.array([593,-877]),
-              np.array([690,152])]
+fixed_goal = []
 robot_dict = {}
 bounding_box = dict()
 path_pos = []
