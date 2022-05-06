@@ -6,6 +6,7 @@ import time
 import evdev
 from evdev import ecodes, InputDevice
 
+HOST_ADDRESS = '127.0.0.1'
 BLACK = (0, 0, 0)
 GREY = (192, 192, 192)
 BLUE = (0, 0, 255)
@@ -84,13 +85,6 @@ def parse_vehicle_wheel(joystick, clock):
 
     return steer, throttle, brake
 
-def drawRobots(SCREEN, robot_pos, robot_heading, map_offset):
-    # for pos, heading, cmd in zip(robot_pos, robot_heading, robot_cmd):
-    for pos, heading in zip(robot_pos, robot_heading):
-        cmd = [0.5]
-        pygame.draw.circle(SCREEN, GREEN, pos + map_offset, ROBOT_SIZE)
-        pygame.draw.line(SCREEN, BLUE, pos + map_offset, pos + map_offset + min(max(40*cmd[0], 25), 40)*np.array([np.cos(heading+np.pi/2), -np.sin(heading+np.pi/2)]), 5)
-
 def drawJoystick(steer, throttle, brake):
     # font settings
     FONT = pygame.font.SysFont('Corbel', 50)
@@ -121,6 +115,12 @@ def drawGoal(SCREEN, robot_goal, map_offset):
         width = 10
         pygame.draw.line(SCREEN, RED, (cicle[0]-marker_size, cicle[1]-marker_size), (cicle[0]+marker_size, cicle[1]+marker_size), width)
         pygame.draw.line(SCREEN, RED, (cicle[0]-marker_size, cicle[1]+marker_size), (cicle[0]+marker_size, cicle[1]-marker_size), width)
+
+def drawRobots(SCREEN, robot_dict, map_offset):
+    for robot in robot_dict.items():
+        cmd = [0.5]
+        pygame.draw.circle(SCREEN, GREEN, robot.pos + map_offset, ROBOT_SIZE)
+        pygame.draw.line(SCREEN, BLUE, robot.pos + map_offset, robot.pos + map_offset + min(max(40*cmd[0], 25), 40)*np.array([np.cos(robot.heading+np.pi/2), -np.sin(robot.heading+np.pi/2)]), 5)
 
 def drawBoundingBox(SCREEN, bounding_box, map_offset):
     bounding_box_copy = bounding_box.copy()
@@ -169,7 +169,7 @@ def drawButton(SCREEN, use_laser_map, use_satellite_map, use_joystick):
         pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_JOYSTICK_X, BUTTON_JOYSTICK_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     SCREEN.blit(text, (BUTTON_JOYSTICK_X+20, BUTTON_JOYSTICK_Y+25))
 
-def drawMessageBox(SCREEN, robot_clicked, robot_pos, map_offset, box_clicked, bounding_box):
+def drawMessageBox(SCREEN, map_offset, robot_clicked, robot_clicked_id, robot_dict, box_clicked, box_clicked_id, bounding_box):
     # font settings
     FONT = pygame.font.SysFont('Corbel', 75)
 
@@ -178,14 +178,14 @@ def drawMessageBox(SCREEN, robot_clicked, robot_pos, map_offset, box_clicked, bo
 
     if robot_clicked:
         # box
-        BOX_X, BOX_Y = robot_pos[robot_clicked_id] + map_offset + np.array([25, -150])
+        BOX_X, BOX_Y = robot_dict[robot_clicked_id].pos + map_offset + np.array([25, -150])
         BOX_WIDTH, BOX_HEIGHT = 350, 150
         BOX_COLOR = (255, 255, 255)
         pygame.draw.rect(SCREEN, BOX_COLOR, [BOX_X, BOX_Y, BOX_WIDTH, BOX_HEIGHT])
 
         # button: view image
         text = FONT.render('View Image', True, WHITE)
-        BUTTON_IMAGE_X, BUTTON_IMAGE_Y = robot_pos[robot_clicked_id] + map_offset + np.array([50, -125])
+        BUTTON_IMAGE_X, BUTTON_IMAGE_Y = robot_dict[robot_clicked_id].pos + map_offset + np.array([50, -125])
         if BUTTON_IMAGE_X <= mouse[0] <= BUTTON_IMAGE_X + BUTTON_WIDTH and BUTTON_IMAGE_Y <= mouse[1] <= BUTTON_IMAGE_Y + BUTTON_HEIGHT:
             pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_IMAGE_X, BUTTON_IMAGE_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
         else:
@@ -215,7 +215,7 @@ def drawRectSelections(SCREEN, rect_select, rect_start_pos, rect_end_pos):
 
 
 class Receiver(object):
-    def __init__(self, HOST_ADDRESS):
+    def __init__(self):
         self.path_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.path_sock.settimeout(1.0)
         self.path_sock.bind((HOST_ADDRESS, 23333))
@@ -267,3 +267,35 @@ class Receiver(object):
             except socket.timeout:
                 self.timeout = True
             time.sleep(0.01)
+
+def sendGoal(robot_dict, goal):
+    goal_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    robot_id = 0
+    if robot_id not in robot_dict.keys():
+        goal_str = str(goal[0]) + ',' + str(goal[1])
+    else:
+        MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
+        offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
+        pos = robot_dict[robot_id].pos - offset
+        goal_str = str(goal[0]) + ',' + str(goal[1]) + ',' + str(pos[0]) + ',' + str(pos[1])
+    goal_sock.sendto(bytes(goal_str, 'ascii'), (HOST_ADDRESS, 23334))
+
+class Robot():
+    def __init__(self, id, pos=None, heading=None, cmd=None, img=None):
+        self.id = id
+        self.pos = pos
+        self.heading = heading
+        self.cmd = cmd
+        self.img = img
+
+    def update_pos(self, pos):
+        self.pos = pos
+
+    def update_heading(self, heading):
+        self.heading = heading
+
+    def update_cmd(self, cmd):
+        self.cmd = cmd
+
+    def update_img(self, img):
+        self.img = img

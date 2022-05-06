@@ -18,11 +18,10 @@ from proto.python_out import marker_msgs_pb2, geometry_msgs_pb2, path_msgs_pb2, 
 from utils import *
 
 
-HOST_ADDRESS = '127.0.0.1'
 # read map
 LASER_MAP = pygame.image.load('./maps/laser_map.png')
 SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
-DISPLAY_MAP = LASER_MAP
+DISPLAY_MAP = SATELLITE_MAP
 map_offset = np.array([0, 0])
 robot_goal = None
 fixed_goal = [np.array([1218,139]),
@@ -30,21 +29,18 @@ fixed_goal = [np.array([1218,139]),
               np.array([1231,-895]),
               np.array([593,-877]),
               np.array([690,152])]
-robot_pos = []
-robot_heading = []
-robot_cmd = []
+robot_dict = {}
 bounding_box = dict()
 path_pos = []
-new_path_pos =[]
+new_path_pos = []
 robot_clicked_id = None
-robot_img = None
 box_clicked_id = None
-ifm = None
+ifm_dict = {}
 rect_start_pos = None
 rect_end_pos = None
 # flags
-use_laser_map = True
-use_satellite_map = False
+use_laser_map = False
+use_satellite_map = True
 map_draging = False
 goal_setting = False
 robot_clicked = False
@@ -53,14 +49,8 @@ box_clicked = False
 use_joystick = False
 rect_select = False
 
-class Robot():
-    def __init__(self, id, pos, heading, cmd):
-        self.id = id
-        self.pos = pos
-        self.heading = heading
-        self.cmd = cmd
 
-def parse_message(message): 
+def parse_message(message, robot_id):
     global bounding_box
     marker_list = marker_msgs_pb2.MarkerList()
     marker_list.ParseFromString(message)
@@ -92,27 +82,35 @@ def parse_message(message):
             pass
         # print(bounding_box)
 
-def parse_odometry(message):
-    global robot_pos, robot_heading
+def parse_odometry(message, robot_id):
+    global robot_dict
     odometry = geometry_msgs_pb2.Pose()
     odometry.ParseFromString(message)
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
-    robot_pos = [np.array([int(odometry.position.y*(-20)+2033), int(2733-20*odometry.position.x)]) + offset]
-    # robot_pos = [np.array([int(odometry.position.y*(-20)+1745), int(2461-20*odometry.position.x)]) + offset]
-    robot_heading = [R.from_quat([odometry.orientation.x, odometry.orientation.y, odometry.orientation.z, odometry.orientation.w]).as_euler('xyz', degrees=False)[2]]
+    robot_pos = np.array([int(odometry.position.y*(-20)+2033), int(2733-20*odometry.position.x)]) + offset
+    robot_heading = R.from_quat([odometry.orientation.x, odometry.orientation.y, odometry.orientation.z, odometry.orientation.w]).as_euler('xyz', degrees=False)[2]
+    if robot_id in robot_dict.keys():
+        robot_dict[robot_id].update_pos(robot_pos)
+        robot_dict[robot_id].update_heading(robot_heading)
+    else:
+        # register new robot
+        robot_dict[robot_id] = Robot(id=robot_id, pos=robot_pos, heading=robot_heading)
 
-def parse_cmd(message):
-    global robot_cmd
-    # print('grt cmd !!!')
+def parse_cmd(message, robot_id):
+    global robot_dict
     cmd = cmd_msgs_pb2.Cmd()
     cmd.ParseFromString(message)
     robot_cmd = [[cmd.v, cmd.w]]
+    if robot_id in robot_dict.keys():
+        robot_dict[robot_id].update_cmd(robot_cmd)
 
-def parse_img(message):
-    global robot_img
+def parse_img(message, robot_id):
+    global robot_dict
     nparr = np.frombuffer(message, np.uint8)
     robot_img = cv2.imdecode(nparr,  cv2.IMREAD_COLOR)
+    if robot_id in robot_dict.keys():
+        robot_dict[robot_id].update_img(robot_img)
 
 def send_path(path_list):
     global ifm
@@ -164,19 +162,9 @@ class Cloud(Informer):
         self.send(message, 'ctrl')
 
 def start_ifm():
-    global ifm
-    ifm = Cloud(config = 'config.yaml')
-
-def sendGoal(goal):
-    goal_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    if len(robot_pos) == 0:
-        goal_str = str(goal[0]) + ',' + str(goal[1])
-    else:
-        MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
-        offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
-        pos = robot_pos[0] - offset
-        goal_str = str(goal[0]) + ',' + str(goal[1]) + ',' + str(pos[0]) + ',' + str(pos[1])
-    goal_sock.sendto(bytes(goal_str, 'ascii'), (HOST_ADDRESS, 23334))
+    global ifm_dict
+    for i in range(1, 11):
+        ifm_dict[i] = Cloud(config = 'config.yaml', robot_id = i)
 
 def screen2pos(x, y):
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
@@ -195,7 +183,7 @@ if __name__ == "__main__":
     pygame.display.set_icon(icon)
     CLOCK = pygame.time.Clock()
     SCREEN.fill(GREY)
-    data_receiver = Receiver(HOST_ADDRESS)
+    data_receiver = Receiver()
     # 5G server setup
     start_thread = threading.Thread(
         target = start_ifm, args=()
@@ -215,11 +203,11 @@ if __name__ == "__main__":
         drawMaps(SCREEN, DISPLAY_MAP, map_offset)
         drawFixedGoal(SCREEN, fixed_goal, map_offset)
         drawGoal(SCREEN, robot_goal, map_offset)
-        drawRobots(SCREEN, robot_pos, robot_heading, map_offset)
+        drawRobots(SCREEN, robot_dict, map_offset)
         drawBoundingBox(SCREEN, bounding_box, map_offset)
         drawPath(SCREEN, path_pos, map_offset)
         drawButton(SCREEN, use_laser_map, use_satellite_map, use_joystick)
-        drawMessageBox(SCREEN, robot_clicked, robot_pos, map_offset, box_clicked, bounding_box)
+        drawMessageBox(SCREEN, map_offset, robot_clicked, robot_clicked_id, robot_dict, box_clicked, box_clicked_id, bounding_box)
         drawRectSelections(SCREEN, rect_select, rect_start_pos, rect_end_pos)
 
         if len(path_pos) > 1 and cnt % 5 == 0:
@@ -271,13 +259,13 @@ if __name__ == "__main__":
                 # button: robot
                 if robot_clicked:
                     # button: view image
-                    BUTTON_IMAGE_X, BUTTON_IMAGE_Y = robot_pos[robot_clicked_id] + map_offset + np.array([50, -125])
+                    BUTTON_IMAGE_X, BUTTON_IMAGE_Y = robot_dict[robot_clicked_id].pos + map_offset + np.array([50, -125])
                     if BUTTON_IMAGE_X <= mouse[0] <= BUTTON_IMAGE_X + BUTTON_WIDTH and BUTTON_IMAGE_Y <= mouse[1] <= BUTTON_IMAGE_Y + BUTTON_HEIGHT:
                         view_image = True
                         print('show image')
                 robot_clicked = False
-                for idx, pos in enumerate(robot_pos):
-                    if math.hypot(mouse[0] - (pos + map_offset)[0], mouse[1] - (pos + map_offset)[1]) <= ROBOT_SIZE:
+                for robot in robot_dict.items():
+                    if math.hypot(mouse[0] - (robot.pos + map_offset)[0], mouse[1] - (robot.pos + map_offset)[1]) <= ROBOT_SIZE:
                         print('click robot {}'.format(idx))
                         robot_clicked = True
                         robot_clicked_id = idx
@@ -304,10 +292,10 @@ if __name__ == "__main__":
                     map_draging = False
                     if rect_select:
                         p2 = Polygon(np.array([rect_start_pos, (rect_start_pos[0], rect_end_pos[1]), rect_end_pos, (rect_end_pos[0], rect_start_pos[1])]))
-                        for idx, pos in enumerate(robot_pos):
-                            p1 = Point(pos + map_offset)
+                        for robot in robot_dict.items():
+                            p1 = Point(robot.pos + map_offset)
                             if p2.contains(p1):
-                                print('select robot', idx)
+                                print('select robot', robot.id)
                         rect_select = False
                         rect_start_pos = rect_end_pos = None
             elif event.type == pygame.MOUSEMOTION and mods & pygame.KMOD_CTRL:
@@ -326,15 +314,17 @@ if __name__ == "__main__":
         # send goal
         if robot_goal is not None:
             if cnt % 10 == 0: 
-                sendGoal(screen2pos(*robot_goal))
-        
+                sendGoal(robot_dict, screen2pos(*robot_goal))
+
         # view image
-        if view_image and robot_img is not None:
-            # new_img = cv2.resize(robot_img, (1280, 960))
-            cv2.imshow('Robot Image', robot_img)
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                view_image = False
-                cv2.destroyAllWindows()
+        if view_image:
+            try:
+                cv2.imshow('Robot Image', robot_dict[robot_clicked_id].img)
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    view_image = False
+                    cv2.destroyAllWindows()
+            except:
+                pass
 
         # parse joystick
         if use_joystick:
