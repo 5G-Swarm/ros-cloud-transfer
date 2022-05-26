@@ -1,4 +1,6 @@
 debug_mode: False
+use_log: False
+robot_id: 1
 
 role_info:
     is_client: True
@@ -8,27 +10,27 @@ network_info:
     ip: '127.0.0.1'
 
     target_info:
-        ip: '172.16.10.3'
-        # ip: '127.0.0.1'
+        # ip: '172.16.10.3'
+        ip: '127.0.0.1'
 
 message_info:
     msg:
         is_tcp: True
-        port: 20001
+        port: 21000
     odm:
         is_tcp: True
-        port: 20002
+        port: 22000
     path:
         is_tcp: True
-        port: 20003
+        port: 23000
     cmd:
         is_tcp: True
-        port: 20004
+        port: 24000
     img:
         is_tcp: True
-        port: 20005
+        port: 25000
         width: 640
         height: 480
     ctrl:
         is_tcp: True
-        port: 20006
+        port: 26000

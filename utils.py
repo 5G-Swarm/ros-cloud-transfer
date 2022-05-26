@@ -1,10 +1,14 @@
+import math
 import pygame
+from pygame.locals import K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_UP, K_a, K_d, K_s, K_w
 import numpy as np
 import socket
 import threading
 import time
 import evdev
 from evdev import ecodes, InputDevice
+from icecream import ic as print
+
 
 HOST_ADDRESS = '127.0.0.1'
 BLACK = (0, 0, 0)
@@ -13,8 +17,10 @@ BLUE = (0, 0, 255)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 WHITE = (255, 255, 255)
-WINDOW_WIDTH = 1920
-WINDOW_HEIGHT = 1080
+# WINDOW_WIDTH = 1920
+WINDOW_WIDTH = 3000
+# WINDOW_HEIGHT = 1080
+WINDOW_HEIGHT = 1500
 ROBOT_SIZE = 20
 BUTTON_WIDTH = 300
 BUTTON_HEIGHT = 100
@@ -30,6 +36,28 @@ BUTTON_JOYSTICK_X = 50
 BUTTON_JOYSTICK_Y = 500
 
 
+def gps2xy(latitude, longtitude):
+    L = 6381372*math.pi*2                            #地球周长
+    W = L                                            #平面展开，将周长视为X轴
+    H = L/2                                          #Y轴约等于周长一般
+    mill = 2.3                                     #米勒投影中的一个常数，范围大约在正负2.3之间  
+    x = longtitude*math.pi/180                       #将经度从度数转换为弧度
+    y = latitude*math.pi/180                         #将纬度从度数转换为弧度 
+    y = 1.25*math.log(math.tan(0.25*math.pi+0.4*y))  #这里是米勒投影的转换 
+    x = (W/2)+(W/(2*math.pi))*x
+    y = (H/2)-(H/(2*mill))*y
+    return int(round(x)), int(round(y))
+
+def xy2gps(x, y):
+    L = 6381372 * math.pi*2
+    W = L
+    H = L/2
+    mill = 2.3
+    latitude = ((H/2-y)*2*mill)/(1.25*H)
+    latitude = ((math.atan(math.exp(latitude))-0.25*math.pi)*180)/(0.4*math.pi)
+    longtitude = (x-W/2)*360/W
+    return round(latitude,7), round(longtitude,7)
+
 def setup_joystick():
     try:
         device = evdev.list_devices()[0]
@@ -40,8 +68,42 @@ def setup_joystick():
         joystick_count = pygame.joystick.get_count()
         joystick = pygame.joystick.Joystick(0)
         joystick.init()
+        return joystick
     except:
         print('JOYSTICK NOT CONNECTED!!!')
+        return None
+
+def pixel2gps(x, y):
+    p1_pixel = np.array([807, 3450])
+    p1_gps = np.array(gps2xy(30.259059, 120.120360))
+    p2_pixel = np.array([814, 632])
+    p2_gps = np.array(gps2xy(30.265143, 120.122862))
+    vec_pixel = p2_pixel - p1_pixel
+    vec_gps = p2_gps - p1_gps
+    pixel_pos = np.array([x, y])
+    vec_p = pixel_pos - p1_pixel
+    rot_p = np.arctan2(vec_gps[1], vec_gps[0]) + np.arctan2(vec_p[1], vec_p[0]) - np.arctan2(vec_pixel[1], vec_pixel[0])
+    len_p = np.linalg.norm(vec_p) * np.linalg.norm(vec_gps) / np.linalg.norm(vec_pixel)
+    vec_p = np.array([len_p*np.cos(rot_p), len_p*np.sin(rot_p)])
+    gps_pos = p1_gps + vec_p
+    gps_pos = xy2gps(*gps_pos)
+    return gps_pos
+
+def gps2pixel(latitude, longtitude):
+    p1_pixel = np.array([807, 3450])
+    p1_gps = np.array(gps2xy(30.259059, 120.120360))
+    p2_pixel = np.array([814, 632])
+    p2_gps = np.array(gps2xy(30.265143, 120.122862))
+    vec_pixel = p2_pixel - p1_pixel
+    vec_gps = p2_gps - p1_gps
+    p = np.array(gps2xy(latitude, longtitude))
+    vec_p = p - p1_gps
+    rot_p = np.arctan2(vec_pixel[1], vec_pixel[0]) + np.arctan2(vec_p[1], vec_p[0]) - np.arctan2(vec_gps[1], vec_gps[0])
+    len_p = np.linalg.norm(vec_p) * np.linalg.norm(vec_pixel) / np.linalg.norm(vec_gps)
+    vec_p = np.array([len_p*np.cos(rot_p), len_p*np.sin(rot_p)])
+    pixel_pos = p1_pixel + vec_p
+    pixel_pos = np.array([int(pixel_pos[0]), int(pixel_pos[1])])
+    return pixel_pos
 
 def parse_vehicle_wheel(joystick, clock):
     keys = pygame.key.get_pressed()
@@ -88,7 +150,7 @@ def parse_vehicle_wheel(joystick, clock):
 
     return steer, throttle, brake
 
-def drawJoystick(steer, throttle, brake):
+def drawJoystick(SCREEN, steer, throttle, brake):
     # font settings
     FONT = pygame.font.SysFont('Corbel', 50)
     text = FONT.render('steer {:.2f}'.format(steer), True, BLUE)
@@ -120,7 +182,7 @@ def drawGoal(SCREEN, robot_goal, map_offset):
         pygame.draw.line(SCREEN, RED, (cicle[0]-marker_size, cicle[1]+marker_size), (cicle[0]+marker_size, cicle[1]-marker_size), width)
 
 def drawRobots(SCREEN, robot_dict, map_offset):
-    for robot in robot_dict.items():
+    for idx, robot in robot_dict.items():
         cmd = [0.5]
         pygame.draw.circle(SCREEN, GREEN, robot.pos + map_offset, ROBOT_SIZE)
         pygame.draw.line(SCREEN, BLUE, robot.pos + map_offset, robot.pos + map_offset + min(max(40*cmd[0], 25), 40)*np.array([np.cos(robot.heading+np.pi/2), -np.sin(robot.heading+np.pi/2)]), 5)
@@ -271,16 +333,17 @@ class Receiver(object):
                 self.timeout = True
             time.sleep(0.01)
 
-def sendGoal(robot_dict, goal):
+def sendGoal(DISPLAY_MAP, robot_dict, goal):
+    MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
+    offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
+    send_goal = goal - offset
     goal_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     robot_id = 0
     if robot_id not in robot_dict.keys():
-        goal_str = str(goal[0]) + ',' + str(goal[1])
+        goal_str = str(send_goal[0]) + ',' + str(send_goal[1])
     else:
-        MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
-        offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
         pos = robot_dict[robot_id].pos - offset
-        goal_str = str(goal[0]) + ',' + str(goal[1]) + ',' + str(pos[0]) + ',' + str(pos[1])
+        goal_str = str(send_goal[0]) + ',' + str(send_goal[1]) + ',' + str(pos[0]) + ',' + str(pos[1])
     goal_sock.sendto(bytes(goal_str, 'ascii'), (HOST_ADDRESS, 23334))
 
 class Robot():

@@ -3,7 +3,6 @@
 
 from os import wait
 import pygame
-from pygame.locals import K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_UP, K_a, K_d, K_s, K_w
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from icecream import ic as print
@@ -22,14 +21,14 @@ from utils import *
 BAIDU_MAP = pygame.image.load('./maps/yuquan.png')
 SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
 DISPLAY_MAP = BAIDU_MAP
-map_offset = np.array([0, -1200])
+map_offset = np.array([0, 0])
 robot_goal = None
 fixed_goal = []
 robot_dict = {}
 bounding_box = dict()
 path_pos = []
 new_path_pos = []
-robot_clicked_id = None
+robot_clicked_id = 1#None
 box_clicked_id = None
 ifm_dict = {}
 rect_start_pos = None
@@ -54,7 +53,7 @@ def parse_message(message, robot_id):
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
     for marker in marker_list.marker_list:
         try:
-            center_pos = np.array([int(marker.pose.position.y*(-20)+2033), int(2733-20*marker.pose.position.x)]) + offset
+            center_pos = gps2pixel(marker.pose.position.x, marker.pose.position.y) + offset
             orientation = R.from_quat([marker.pose.orientation.x, marker.pose.orientation.y, marker.pose.orientation.z, marker.pose.orientation.w]).as_euler('xyz', degrees=False)[2]
             orientation += np.pi / 2
             height, width = 10*marker.scale.x, 10*marker.scale.y
@@ -80,11 +79,13 @@ def parse_message(message, robot_id):
 
 def parse_odometry(message, robot_id):
     global robot_dict
+    # print(len(message), robot_id)
     odometry = geometry_msgs_pb2.Pose()
     odometry.ParseFromString(message)
+    print(odometry)
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
-    robot_pos = np.array([int(odometry.position.y*(-20)+2033), int(2733-20*odometry.position.x)]) + offset
+    robot_pos = gps2pixel(odometry.position.x, odometry.position.y) + offset
     robot_heading = R.from_quat([odometry.orientation.x, odometry.orientation.y, odometry.orientation.z, odometry.orientation.w]).as_euler('xyz', degrees=False)[2]
     if robot_id in robot_dict.keys():
         robot_dict[robot_id].update_pos(robot_pos)
@@ -162,15 +163,10 @@ def start_ifm():
     for i in range(1, 11):
         ifm_dict[i] = Cloud(config = 'config.yaml', robot_id = i)
 
-def screen2gps(x, y):
-    MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
-    pos = np.array([x, y]) - np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
-    return pos
-
-def gps2screen(x, y):
-    MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
-    return x, y
-
+# print(gps2pixel(30.259059, 120.120360))
+# print(gps2pixel(30.265143, 120.122862))
+# print(pixel2gps(807, 3450))
+# print(pixel2gps(814, 632))
 
 if __name__ == "__main__":
     pygame.init()
@@ -187,7 +183,7 @@ if __name__ == "__main__":
     )
     start_thread.start()
     # joystick setup
-    setup_joystick()
+    joystick = setup_joystick()
 
     cnt = 0
     while True:
@@ -258,7 +254,7 @@ if __name__ == "__main__":
                         view_image = True
                         print('show image')
                 robot_clicked = False
-                for robot in robot_dict.items():
+                for idx, robot in robot_dict.items():
                     if math.hypot(mouse[0] - (robot.pos + map_offset)[0], mouse[1] - (robot.pos + map_offset)[1]) <= ROBOT_SIZE:
                         print('click robot {}'.format(idx))
                         robot_clicked = True
@@ -286,7 +282,7 @@ if __name__ == "__main__":
                     map_draging = False
                     if rect_select:
                         p2 = Polygon(np.array([rect_start_pos, (rect_start_pos[0], rect_end_pos[1]), rect_end_pos, (rect_end_pos[0], rect_start_pos[1])]))
-                        for robot in robot_dict.items():
+                        for idx, robot in robot_dict.items():
                             p1 = Point(robot.pos + map_offset)
                             if p2.contains(p1):
                                 print('select robot', robot.id)
@@ -307,8 +303,8 @@ if __name__ == "__main__":
 
         # send goal
         if robot_goal is not None:
-            if cnt % 10 == 0: 
-                sendGoal(robot_dict, screen2gps(*robot_goal))
+            if cnt % 10 == 0:
+                sendGoal(DISPLAY_MAP, robot_dict, robot_goal)
 
         # view image
         if view_image:
@@ -326,7 +322,7 @@ if __name__ == "__main__":
                 steer, throttle, brake = parse_vehicle_wheel(joystick, CLOCK)
                 if abs(steer) < 0.05: steer = 0.
                 # print(steer, throttle, brake)
-                drawJoystick(steer, throttle, brake)
+                drawJoystick(SCREEN, steer, throttle, brake)
                 v = 2*throttle if brake < 0.1 else 0.
                 w = steer*5.
                 send_ctrl(v, w, flag=1.) # manual ctrl
