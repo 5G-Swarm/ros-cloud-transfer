@@ -18,7 +18,8 @@ from utils import *
 
 
 # read map
-BAIDU_MAP = pygame.image.load('./maps/yuquan.png')
+# BAIDU_MAP = pygame.image.load('./maps/yuquan.png')
+BAIDU_MAP = pygame.image.load('./maps/map.png')
 SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
 DISPLAY_MAP = BAIDU_MAP
 map_offset = np.array([0, 0])
@@ -29,6 +30,7 @@ bounding_box = dict()
 path_pos = []
 new_path_pos = []
 robot_clicked_id = 1#None
+robot_select_id = None
 box_clicked_id = None
 ifm_dict = {}
 rect_start_pos = None
@@ -43,7 +45,7 @@ view_image = True
 box_clicked = False
 use_joystick = False
 rect_select = False
-
+# file = open('gps.txt', 'w+')
 
 def parse_message(message, robot_id):
     global bounding_box
@@ -82,10 +84,24 @@ def parse_odometry(message, robot_id):
     # print(len(message), robot_id)
     odometry = geometry_msgs_pb2.Pose()
     odometry.ParseFromString(message)
-    print(odometry)
+    # print(odometry)
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
-    robot_pos = gps2pixel(odometry.position.x, odometry.position.y) + offset
+    # offset = np.array([2600, -1800])
+    # print(odometry.position.x-odometry.position.x%1, 100*(odometry.position.x%1), odometry.position.y-odometry.position.y%1, 100*(odometry.position.y%1))
+    # new_la, new_lo = gps60to10(odometry.position.x-odometry.position.x%1, 100*(odometry.position.x%1), odometry.position.y-odometry.position.y%1, 100*(odometry.position.y%1))
+    # print(new_la, new_lo)
+    try:
+        # file.write(str(odometry.position.x) +'\t'+ str(odometry.position.y)+ '\n')
+        robot_pos = gps2pixel(odometry.position.x, odometry.position.y) + offset
+        # robot_pos = pixel2gps(odometry.position.x, odometry.position.y) + offset
+        # print(robot_pos)
+    except:
+        return
+    # print(odometry.position.x, odometry.position.y)
+    # print(odometry)
+    # robot_pos = gps2pixel(new_la, new_lo)# + offset
+    # print('robot_pos', robot_pos)
     robot_heading = R.from_quat([odometry.orientation.x, odometry.orientation.y, odometry.orientation.z, odometry.orientation.w]).as_euler('xyz', degrees=False)[2]
     if robot_id in robot_dict.keys():
         robot_dict[robot_id].update_pos(robot_pos)
@@ -282,10 +298,12 @@ if __name__ == "__main__":
                     map_draging = False
                     if rect_select:
                         p2 = Polygon(np.array([rect_start_pos, (rect_start_pos[0], rect_end_pos[1]), rect_end_pos, (rect_end_pos[0], rect_start_pos[1])]))
+                        robot_select_id = []
                         for idx, robot in robot_dict.items():
                             p1 = Point(robot.pos + map_offset)
                             if p2.contains(p1):
-                                print('select robot', robot.id)
+                                robot_select_id.append(robot.id)
+                        print('select robot', robot_select_id)
                         rect_select = False
                         rect_start_pos = rect_end_pos = None
             elif event.type == pygame.MOUSEMOTION and mods & pygame.KMOD_CTRL:
@@ -304,7 +322,7 @@ if __name__ == "__main__":
         # send goal
         if robot_goal is not None:
             if cnt % 10 == 0:
-                sendGoal(DISPLAY_MAP, robot_dict, robot_goal)
+                sendGoal(DISPLAY_MAP, robot_dict, robot_goal, robot_select_id)
 
         # view image
         if view_image:

@@ -36,17 +36,44 @@ BUTTON_JOYSTICK_X = 50
 BUTTON_JOYSTICK_Y = 500
 
 
+# def gps2xy(latitude, longtitude):
+#     L = 6381372*math.pi*2                            #地球周长
+#     W = L                                            #平面展开，将周长视为X轴
+#     H = L/2                                          #Y轴约等于周长一般
+#     mill = 2.3                                     #米勒投影中的一个常数，范围大约在正负2.3之间  
+#     x = longtitude*math.pi/180                       #将经度从度数转换为弧度
+#     y = latitude*math.pi/180                         #将纬度从度数转换为弧度 
+#     y = 1.25*math.log(math.tan(0.25*math.pi+0.4*y))  #这里是米勒投影的转换 
+#     x = (W/2)+(W/(2*math.pi))*x
+#     y = (H/2)-(H/(2*mill))*y
+#     return int(x), int(y)
 def gps2xy(latitude, longtitude):
-    L = 6381372*math.pi*2                            #地球周长
-    W = L                                            #平面展开，将周长视为X轴
-    H = L/2                                          #Y轴约等于周长一般
-    mill = 2.3                                     #米勒投影中的一个常数，范围大约在正负2.3之间  
-    x = longtitude*math.pi/180                       #将经度从度数转换为弧度
-    y = latitude*math.pi/180                         #将纬度从度数转换为弧度 
-    y = 1.25*math.log(math.tan(0.25*math.pi+0.4*y))  #这里是米勒投影的转换 
-    x = (W/2)+(W/(2*math.pi))*x
-    y = (H/2)-(H/(2*mill))*y
-    return int(round(x)), int(round(y))
+    latitude = latitude * math.pi/180
+    longtitude = longtitude *math.pi/180
+    #the radius of the equator
+    radius = 6378137
+    #distance of the two poles
+    distance = 6356752.3142
+    base = 30 * math.pi/180
+    
+    radius_square = pow(radius,2)
+    distance_square = pow(distance,2)
+    
+    e = math.sqrt(1 - distance_square/radius_square)
+    e2 = math.sqrt(radius_square/distance_square - 1)
+
+    cosb0 = math.cos(base)
+    N = (radius_square / distance) / math.sqrt( 1+ pow(e2,2)*pow(cosb0,2))
+    K = N*cosb0
+    
+    sinb = math.sin(latitude)
+    tanv = math.tan(math.pi/4 + latitude/2)
+    E2 = pow((1 - e*sinb) / (1+ e* sinb),e/2)
+    xx = tanv * E2
+    xc = K * math.log(xx)
+    yc = K * longtitude
+    return xc, yc
+
 
 def xy2gps(x, y):
     L = 6381372 * math.pi*2
@@ -73,32 +100,25 @@ def setup_joystick():
         print('JOYSTICK NOT CONNECTED!!!')
         return None
 
-def pixel2gps(x, y):
-    p1_pixel = np.array([807, 3450])
-    p1_gps = np.array(gps2xy(30.259059, 120.120360))
-    p2_pixel = np.array([814, 632])
-    p2_gps = np.array(gps2xy(30.265143, 120.122862))
-    vec_pixel = p2_pixel - p1_pixel
-    vec_gps = p2_gps - p1_gps
-    pixel_pos = np.array([x, y])
-    vec_p = pixel_pos - p1_pixel
-    rot_p = np.arctan2(vec_gps[1], vec_gps[0]) + np.arctan2(vec_p[1], vec_p[0]) - np.arctan2(vec_pixel[1], vec_pixel[0])
-    len_p = np.linalg.norm(vec_p) * np.linalg.norm(vec_gps) / np.linalg.norm(vec_pixel)
-    vec_p = np.array([len_p*np.cos(rot_p), len_p*np.sin(rot_p)])
-    gps_pos = p1_gps + vec_p
-    gps_pos = xy2gps(*gps_pos)
-    return gps_pos
+def gps60to10(la, la_dig, lo, lo_dig):
+    new_la = la + la_dig/60.
+    new_lo = lo + lo_dig/60.
+    return new_la, new_lo
+
 
 def gps2pixel(latitude, longtitude):
-    p1_pixel = np.array([807, 3450])
-    p1_gps = np.array(gps2xy(30.259059, 120.120360))
-    p2_pixel = np.array([814, 632])
-    p2_gps = np.array(gps2xy(30.265143, 120.122862))
+    p1_pixel = np.array([490,1380])
+    new_la, new_lo = 30.26124060928429,120.11707073496261
+    p1_gps = np.array(gps2xy(new_la, new_lo))
+    p2_pixel = np.array([900,140])
+    new_la2, new_lo2 = 30.26208464,120.11737484
+    p2_gps = np.array(gps2xy(new_la2, new_lo2))
     vec_pixel = p2_pixel - p1_pixel
     vec_gps = p2_gps - p1_gps
     p = np.array(gps2xy(latitude, longtitude))
+    # print(p)
     vec_p = p - p1_gps
-    rot_p = np.arctan2(vec_pixel[1], vec_pixel[0]) + np.arctan2(vec_p[1], vec_p[0]) - np.arctan2(vec_gps[1], vec_gps[0])
+    rot_p = (np.arctan2(vec_pixel[1], vec_pixel[0]) + np.arctan2(vec_p[1], vec_p[0]) - np.arctan2(vec_gps[1], vec_gps[0]))
     len_p = np.linalg.norm(vec_p) * np.linalg.norm(vec_pixel) / np.linalg.norm(vec_gps)
     vec_p = np.array([len_p*np.cos(rot_p), len_p*np.sin(rot_p)])
     pixel_pos = p1_pixel + vec_p
@@ -333,12 +353,12 @@ class Receiver(object):
                 self.timeout = True
             time.sleep(0.01)
 
-def sendGoal(DISPLAY_MAP, robot_dict, goal):
+def sendGoal(DISPLAY_MAP, robot_dict, goal, robot_select_id):
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
     offset = np.array([WINDOW_WIDTH//2 - MAP_WIDTH//2, WINDOW_HEIGHT//2 - MAP_HEIGHT//2])
     send_goal = goal - offset
     goal_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    robot_id = 0
+    robot_id = robot_select_id[0]
     if robot_id not in robot_dict.keys():
         goal_str = str(send_goal[0]) + ',' + str(send_goal[1])
     else:
