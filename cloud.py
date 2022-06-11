@@ -254,17 +254,31 @@ def send_path(path_list):
 
 
 def send_ctrl(v, w, flag=1.):
-    global ifm
+    global ifm_dict
     ctrl_cmd = ctrl_msgs_pb2.Ctrl()
     ctrl_cmd.flag = flag
     ctrl_cmd.v = v
     ctrl_cmd.w = -w
     # print('send ctrl:', ctrl_cmd)
     sent_data = ctrl_cmd.SerializeToString()
-    if ifm is not None:
-        # print('send ctrl success')
-        ifm.send_ctrl(sent_data)
 
+    if robot_select_id is not None and len(robot_select_id) > 0:
+        print('send ctrl', robot_select_id[0])
+        ifm_dict[robot_select_id[0]].send_ctrl(sent_data)
+
+def send_dect(w):
+    global ifm_dict
+    ctrl_cmd = ctrl_msgs_pb2.Ctrl()
+    ctrl_cmd.flag = 2
+    ctrl_cmd.v = 0
+    ctrl_cmd.w = -w
+    sent_data = ctrl_cmd.SerializeToString()
+
+    if robot_select_id is not None and len(robot_select_id) > 0:
+        print('send ctrl', robot_select_id[0])
+        ifm_dict[robot_select_id[0]].send_ctrl(sent_data)
+    else:
+        print('No robot to send dect cmd !')
 
 class Cloud(Informer):
     def msg_recv(self):
@@ -386,6 +400,18 @@ if __name__ == "__main__":
                         for _ in range(10):
                             send_ctrl(1., 1., flag=0.)  # auto mode
                             time.sleep(0.01)
+                elif BUTTON_DECT_L_X <= mouse[
+                        0] <= BUTTON_DECT_L_X + BUTTON_WIDTH and BUTTON_DECT_L_Y <= mouse[
+                            1] <= BUTTON_DECT_L_Y + BUTTON_HEIGHT:
+                    print('dect left !')
+                    send_dect(0.1)
+                
+                elif BUTTON_DECT_R_X <= mouse[
+                        0] <= BUTTON_DECT_R_X + BUTTON_WIDTH and BUTTON_DECT_R_Y <= mouse[
+                            1] <= BUTTON_DECT_R_Y + BUTTON_HEIGHT:
+                    print('dect right !')
+                    send_dect(-0.1)
+
                 # button: robot
                 if robot_clicked:
                     # button: view image

@@ -35,6 +35,11 @@ BUTTON_SATELLITE_Y = 350
 BUTTON_JOYSTICK_X = 50
 BUTTON_JOYSTICK_Y = 500
 
+BUTTON_DECT_L_X = 50
+BUTTON_DECT_L_Y = 650
+BUTTON_DECT_R_X = 50
+BUTTON_DECT_R_Y = 800
+
 
 def setup_joystick():
     try:
@@ -229,6 +234,23 @@ def drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick):
     else:
         pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_JOYSTICK_X, BUTTON_JOYSTICK_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     SCREEN.blit(text, (BUTTON_JOYSTICK_X+20, BUTTON_JOYSTICK_Y+25))
+
+    # button: dectection
+    text = FONT.render('DECT-L', True, WHITE)
+    if (BUTTON_DECT_L_X <= mouse[0] <= BUTTON_DECT_L_X + BUTTON_WIDTH and BUTTON_DECT_L_Y <= mouse[1] <= BUTTON_DECT_L_Y + BUTTON_HEIGHT) or use_joystick:
+        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_DECT_L_X, BUTTON_DECT_L_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    else:
+        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_DECT_L_X, BUTTON_DECT_L_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    SCREEN.blit(text, (BUTTON_DECT_L_X+60, BUTTON_DECT_L_Y+25))
+
+    text = FONT.render('DECT-R', True, WHITE)
+    if (BUTTON_DECT_R_X <= mouse[0] <= BUTTON_DECT_R_X + BUTTON_WIDTH and BUTTON_DECT_R_Y <= mouse[1] <= BUTTON_DECT_R_Y + BUTTON_HEIGHT) or use_joystick:
+        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_DECT_R_X, BUTTON_DECT_R_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    else:
+        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_DECT_R_X, BUTTON_DECT_R_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    SCREEN.blit(text, (BUTTON_DECT_R_X+60, BUTTON_DECT_R_Y+25))
+
+
 
 def drawMessageBox(SCREEN, map_offset, robot_clicked, robot_clicked_id, robot_dict, box_clicked, box_clicked_id, bounding_box):
     # font settings
