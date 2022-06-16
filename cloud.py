@@ -24,13 +24,10 @@ SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
 DISPLAY_MAP = BAIDU_MAP
 sleep(1)
 map_offset = np.array([0, 0])
-robot_goal = None
 fixed_goal = []
 robot_dict = {}
-robot_img_dict = {}
 bounding_box = dict()
-path_pos = []
-new_path_pos = []
+car_number = None
 robot_clicked_id = 1  #None
 robot_select_id = []
 box_clicked_id = None
@@ -47,7 +44,7 @@ view_image = True
 box_clicked = False
 use_joystick = False
 rect_select = False
-# file = open('gps.txt', 'w+')
+recg_flag = False
 
 
 class Receiver(object):
@@ -66,12 +63,12 @@ class Receiver(object):
         self.timeout = False
 
     def receive_path(self):
-        global path_pos, new_path_pos
+        global robot_dict
         while True:
             try:
                 data, _ = self.path_sock.recvfrom(4096)
                 data = data.decode("utf-8").split(';')
-                robot_id, path = data[0], data[1:]
+                robot_id, path = int(data[0]), data[1:]
                 MAP_WIDTH, MAP_HEIGHT = self.display_map.get_size()
                 offset = np.array([
                     WINDOW_WIDTH // 2 - MAP_WIDTH // 2,
@@ -91,7 +88,8 @@ class Receiver(object):
                 ])
                 if robot_id in robot_dict.keys():
                     robot_dict[robot_id].update_path(path_pos)
-                # print(path_pos, len(path_pos))
+                    robot_dict[robot_id].update_new_path(new_path_pos)
+                # print(robot_id, path_pos, len(path_pos))
                 self.timeout = False
             except socket.timeout:
                 self.timeout = True
@@ -103,7 +101,6 @@ class Receiver(object):
                 data, _ = self.gesture_sock.recvfrom(4096)
                 gesture = data.decode("utf-8")
                 # print(gesture)
-                global robot_goal
                 if gesture == 'Number 1':
                     robot_goal = fixed_goal[0]
                 elif gesture == 'Number 2':
@@ -121,6 +118,7 @@ class Receiver(object):
 
 
 def parse_message(message, robot_id):
+    # print('parse_message: ', len(message), robot_id)
     global bounding_box
     marker_list = marker_msgs_pb2.MarkerList()
     marker_list.ParseFromString(message)
@@ -160,9 +158,9 @@ def parse_message(message, robot_id):
             # overlap filter
             overlap = False
             p1 = Polygon(new_box)
-            for id, pos in bounding_box.items():
+            for idx, pos in bounding_box.items():
                 p2 = Polygon(pos)
-                if p1.intersects(p2) and id != marker_id:
+                if p1.intersects(p2) and idx != marker_id:
                     overlap = True
                     break
             if not overlap:
@@ -188,7 +186,6 @@ def parse_odometry(message, robot_id):
     # new_la, new_lo = gps60to10(odometry.position.x-odometry.position.x%1, 100*(odometry.position.x%1), odometry.position.y-odometry.position.y%1, 100*(odometry.position.y%1))
     # print(new_la, new_lo)
     try:
-        # print(odometry)
         robot_pos = gps2pixel(odometry.position.x,
                               odometry.position.y) + offset
         # robot_pos = pixel2gps(odometry.position.x, odometry.position.y) + offset
@@ -213,7 +210,6 @@ def parse_odometry(message, robot_id):
                                      pos=robot_pos,
                                      heading=robot_heading)
 
-
 def parse_cmd(message, robot_id):
     global robot_dict
     cmd = cmd_msgs_pb2.Cmd()
@@ -221,37 +217,51 @@ def parse_cmd(message, robot_id):
     robot_cmd = [[cmd.v, cmd.w]]
     if robot_id in robot_dict.keys():
         robot_dict[robot_id].update_cmd(robot_cmd)
+    else:
+        # register new robot
+        robot_dict[robot_id] = Robot(id=robot_id,
+                                     cmd=robot_cmd)
 
 
 def parse_img(message, robot_id):
-    global robot_dict, robot_img_dict
+    global robot_dict
     # print('get img', len(message), 'id:', robot_id)
     nparr = np.frombuffer(message, np.uint8)
     robot_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    # if robot_id in robot_dict.keys():
-        # robot_dict[robot_id].update_img(robot_img)
-    robot_img_dict[robot_id] = robot_img
+    if robot_id in robot_dict.keys():
+        robot_dict[robot_id].update_img(robot_img)
+    else:
+        # register new robot
+        robot_dict[robot_id] = Robot(id=robot_id,
+                                     img=robot_img)
 
+def parse_recg(message, robot_id):
+    global robot_dict, car_number
+    print('parse_recg', message.decode(), robot_id)
+    string = message.decode()
+    if robot_id in robot_dict.keys():
+        car_number = [robot_dict[robot_id].pos, string]
+        print(car_number)
+    # print(message, robot_id)
 
-def send_path(path_list):
-    global ifm_dict
+def send_path():
+    global ifm_dict, robot_dict
     # print(len(path_list[:20]))
-    path = path_msgs_pb2.Path()
-    for i in range(len(path_list[:20])):
-        pose = path_msgs_pb2.Pose2D()
-        gps = pixel2gps(*path_list[i])
-        pose.x = gps[0]
-        pose.y = gps[1]
-        pose.theta = 0  #path_list[i][2]
-        path.poses.append(pose)
+    for idx, robot in robot_dict.items():
+        if len(robot.new_path_pos) > 1:
+            path = path_msgs_pb2.Path()
+            for i in range(len(robot.new_path_pos[:20])):
+                pose = path_msgs_pb2.Pose2D()
+                gps = pixel2gps(*robot.new_path_pos[i])
+                pose.x = gps[0]
+                pose.y = gps[1]
+                pose.theta = 0  #robot.new_path_pos[i][2]
+                path.poses.append(pose)
 
-    # print(path)
-    sent_data = path.SerializeToString()
-    # print('send', len(sent_data))
-    if robot_select_id is not None:
-        print('send path', robot_select_id[0])
-        ifm_dict[robot_select_id[0]].send_path(sent_data)
-
+            # print(path)
+            sent_data = path.SerializeToString()
+            # print('send', idx, len(sent_data))
+            ifm_dict[idx].send_path(sent_data)
 
 def send_ctrl(v, w, flag=1.):
     global ifm_dict
@@ -292,6 +302,9 @@ class Cloud(Informer):
 
     def img_recv(self):
         self.recv('img', parse_img)
+    
+    def recg_recv(self):
+        self.recv('recg', parse_recg)
 
     def send_path(self, message):
         self.send(message, 'path')
@@ -334,19 +347,19 @@ if __name__ == "__main__":
         SCREEN.fill(GREY)
         drawMaps(SCREEN, DISPLAY_MAP, map_offset)
         drawFixedGoal(SCREEN, fixed_goal, map_offset)
-        drawGoal(SCREEN, robot_goal, map_offset)
+        drawGoal(SCREEN, robot_dict, map_offset)
         drawRobots(SCREEN, robot_dict, map_offset)
         drawBoundingBox(SCREEN, bounding_box, map_offset)
-        drawPath(SCREEN, path_pos, map_offset)
+        drawCarNumber(SCREEN, car_number, map_offset)
+        drawPath(SCREEN, robot_dict, map_offset)
         drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick)
         drawMessageBox(SCREEN, map_offset, robot_clicked, robot_clicked_id,
                        robot_dict, box_clicked, box_clicked_id, bounding_box)
         drawRectSelections(SCREEN, rect_select, rect_start_pos, rect_end_pos)
 
-        if len(path_pos) > 1 and cnt % 5 == 0:
+        if cnt % 5 == 0:
             # print('send path')
-            # send_path(path_pos)
-            send_path(new_path_pos)
+            send_path()
 
         for event in pygame.event.get():
             mods = pygame.key.get_mods()
@@ -403,14 +416,34 @@ if __name__ == "__main__":
                 elif BUTTON_DECT_L_X <= mouse[
                         0] <= BUTTON_DECT_L_X + BUTTON_WIDTH and BUTTON_DECT_L_Y <= mouse[
                             1] <= BUTTON_DECT_L_Y + BUTTON_HEIGHT:
-                    print('dect left !')
-                    send_dect(0.1)
+                    
+                    recg_flag = ~recg_flag
+                    if recg_flag:
+                        print('dect left !')
+                        for _ in range(10):
+                            send_dect(-0.1)
+                            time.sleep(0.01)
+                    else:
+                        print('stop dect!')
+                        for _ in range(10):
+                            send_ctrl(1., 1., flag=0.)  # auto mode
+                            time.sleep(0.01)
                 
                 elif BUTTON_DECT_R_X <= mouse[
                         0] <= BUTTON_DECT_R_X + BUTTON_WIDTH and BUTTON_DECT_R_Y <= mouse[
                             1] <= BUTTON_DECT_R_Y + BUTTON_HEIGHT:
-                    print('dect right !')
-                    send_dect(-0.1)
+
+                    recg_flag = ~recg_flag
+                    if recg_flag:
+                        print('dect right !')
+                        for _ in range(10):
+                            send_dect(0.1)
+                            time.sleep(0.01)
+                    else:
+                        print('stop dect!')
+                        for _ in range(10):
+                            send_ctrl(1., 1., flag=0.)  # auto mode
+                            time.sleep(0.01)
 
                 # button: robot
                 if robot_clicked:
@@ -425,9 +458,8 @@ if __name__ == "__main__":
                         print('show image')
                 robot_clicked = False
                 for idx, robot in robot_dict.items():
-                    if math.hypot(mouse[0] -
-                                  (robot.pos + map_offset)[0], mouse[1] -
-                                  (robot.pos + map_offset)[1]) <= ROBOT_SIZE:
+                    if robot.pos is not None and math.hypot(mouse[0] - (robot.pos + map_offset)[0],
+                        mouse[1] - (robot.pos + map_offset)[1]) <= ROBOT_SIZE:
                         print('click robot {}'.format(idx))
                         robot_clicked = True
                         robot_clicked_id = idx
@@ -485,20 +517,19 @@ if __name__ == "__main__":
                 print("Joystick button released.")
 
         # send goal
-        if robot_goal is not None:
-            if cnt % 10 == 0:
-                sendGoal(DISPLAY_MAP, robot_dict, robot_select_id)
+        if cnt % 10 == 0:
+            sendGoal(DISPLAY_MAP, robot_dict, robot_select_id)
 
         # view image
         if view_image:
             try:
                 # print(robot_img_dict.keys())
-                for key in robot_img_dict.keys():
-                    cv2.imshow('Robot Image', robot_img_dict[key])
-                # cv2.imshow('Robot Image', robot_dict[robot_clicked_id].img)
-                    if cv2.waitKey(25) & 0xFF == ord('q'):
-                        view_image = False
-                        cv2.destroyAllWindows()
+                for idx, robot in robot_dict.items():
+                    if robot.img is not None:
+                        cv2.imshow('Robot Image {}'.format(idx), robot.img)
+                        if cv2.waitKey(25) & 0xFF == ord('q'):
+                            view_image = False
+                            cv2.destroyAllWindows()
             except:
                 pass
 

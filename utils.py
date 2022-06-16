@@ -173,20 +173,27 @@ def drawFixedGoal(SCREEN, fixed_goal, map_offset):
         text = FONT.render('{}'.format(idx+1), True, GREEN)
         SCREEN.blit(text, goal + map_offset + np.array([-25, -25]))
 
-def drawGoal(SCREEN, robot_goal, map_offset):
-    if robot_goal is not None:
-        # pygame.draw.circle(SCREEN, GREEN, robot_goal + map_offset, ROBOT_SIZE)
-        cicle = (robot_goal + map_offset)
-        marker_size = 20
-        width = 10
-        pygame.draw.line(SCREEN, RED, (cicle[0]-marker_size, cicle[1]-marker_size), (cicle[0]+marker_size, cicle[1]+marker_size), width)
-        pygame.draw.line(SCREEN, RED, (cicle[0]-marker_size, cicle[1]+marker_size), (cicle[0]+marker_size, cicle[1]-marker_size), width)
+def drawGoal(SCREEN, robot_dict, map_offset):
+    robot_dict_copy = robot_dict.copy()
+    for idx, robot in robot_dict_copy.items():
+        robot_goal = robot.goal
+        if robot_goal is not None:
+            cicle = (robot_goal + map_offset)
+            marker_size = 20
+            width = 10
+            pygame.draw.line(SCREEN, RED, (cicle[0]-marker_size, cicle[1]-marker_size), (cicle[0]+marker_size, cicle[1]+marker_size), width)
+            pygame.draw.line(SCREEN, RED, (cicle[0]-marker_size, cicle[1]+marker_size), (cicle[0]+marker_size, cicle[1]-marker_size), width)
 
 def drawRobots(SCREEN, robot_dict, map_offset):
-    for idx, robot in robot_dict.items():
-        cmd = [0.5]
-        pygame.draw.circle(SCREEN, GREEN, robot.pos + map_offset, ROBOT_SIZE)
-        pygame.draw.line(SCREEN, BLUE, robot.pos + map_offset, robot.pos + map_offset + min(max(40*cmd[0], 25), 40)*np.array([np.cos(robot.heading+np.pi/2), -np.sin(robot.heading+np.pi/2)]), 5)
+    robot_dict_copy = robot_dict.copy()
+    for idx, robot in robot_dict_copy.items():
+        if robot.pos is not None and robot.heading is not None:
+            cmd = [0.5]
+            pygame.draw.circle(SCREEN, GREEN, robot.pos + map_offset, ROBOT_SIZE)
+            # pygame.draw.line(SCREEN, BLUE, robot.pos + map_offset, robot.pos + map_offset + min(max(40*cmd[0], 25), 40)*np.array([np.cos(robot.heading+np.pi/2), -np.sin(robot.heading+np.pi/2)]), 5)
+            FONT = pygame.font.SysFont('Corbel', 50)
+            text = FONT.render('{}'.format(idx), True, WHITE)
+            SCREEN.blit(text, robot.pos + map_offset + np.array([-10, -16]))
 
 def drawBoundingBox(SCREEN, bounding_box, map_offset):
     bounding_box_copy = bounding_box.copy()
@@ -195,9 +202,19 @@ def drawBoundingBox(SCREEN, bounding_box, map_offset):
         # pygame.draw.rect(SCREEN, BLUE, pygame.Rect(x, y, 60, 100), 10)
         pygame.draw.lines(SCREEN, BLUE, True, pos + map_offset, 10)
 
-def drawPath(SCREEN, path_pos, map_offset):
-    if len(path_pos) > 1:
-        pygame.draw.lines(SCREEN, RED, False, path_pos + map_offset, 10)
+def drawCarNumber(SCREEN, car_number, map_offset):
+    if car_number is not None:
+        pos, number = car_number
+        FONT = pygame.font.SysFont('simsunnsimsun', 100)
+        text = FONT.render(number, True, GREEN)
+        SCREEN.blit(text, pos + map_offset)
+
+def drawPath(SCREEN, robot_dict, map_offset):
+    robot_dict_copy = robot_dict.copy()
+    for idx, robot in robot_dict_copy.items():
+        # print(idx, robot.path_pos)
+        if len(robot.path_pos) > 1:
+            pygame.draw.lines(SCREEN, RED, False, robot.path_pos + map_offset, 10)
 
 def drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick):
     # font settings
@@ -309,13 +326,14 @@ def sendGoal(DISPLAY_MAP, robot_dict, robot_select_id):
         goal_sock.sendto(bytes(goal_str, 'ascii'), (HOST_ADDRESS, 23334))
 
 class Robot():
-    def __init__(self, id, pos=None, heading=None, cmd=None, img=None, path_pos=None, goal=None):
+    def __init__(self, id, pos=None, heading=None, cmd=None, img=None, path_pos=[], new_path_pos=[], goal=None):
         self.id = id
         self.pos = pos
         self.heading = heading
         self.cmd = cmd
         self.img = img
         self.path_pos = path_pos
+        self.new_path_pos = new_path_pos
         self.goal = goal
 
     def update_pos(self, pos):
@@ -332,6 +350,9 @@ class Robot():
 
     def update_path(self, path_pos):
         self.path_pos = path_pos
+
+    def update_new_path(self, new_path_pos):
+        self.new_path_pos = new_path_pos
 
     def update_goal(self, goal):
         self.goal = goal
