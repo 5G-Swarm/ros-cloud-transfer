@@ -37,3 +37,7 @@ message_info:
     recg:
         is_tcp: True
         port: 27000
+    state:
+        is_tcp: True
+        port: 41000
+

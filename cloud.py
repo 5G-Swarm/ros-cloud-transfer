@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from os import wait
+from turtle import heading
 import pygame
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -17,11 +18,11 @@ from proto.python_out import marker_msgs_pb2, geometry_msgs_pb2, path_msgs_pb2, 
 from utils import *
 from time import sleep
 
+import matplotlib.pyplot as plt
 # read map
-# BAIDU_MAP = pygame.image.load('./maps/yuquan.png')
-BAIDU_MAP = pygame.image.load('./maps/map.png')
-SATELLITE_MAP = pygame.image.load('./maps/satellite_map3.png')
-DISPLAY_MAP = BAIDU_MAP
+CAOLOU_MAP = pygame.image.load('./maps/map.png')
+PLAYGROUND_MAP = pygame.image.load('./maps/playground.png')
+DISPLAY_MAP = CAOLOU_MAP
 sleep(1)
 map_offset = np.array([0, 0])
 fixed_goal = []
@@ -35,8 +36,8 @@ ifm_dict = {}
 rect_start_pos = None
 rect_end_pos = None
 # flags
-use_baidu_map = True
-use_satellite_map = False
+use_caolou_map = True
+use_playground_map = False
 map_draging = False
 goal_setting = False
 robot_clicked = False
@@ -46,6 +47,7 @@ use_joystick = False
 rect_select = False
 recg_flag = False
 
+temp_list = set()
 
 class Receiver(object):
     def __init__(self, display_map):
@@ -119,7 +121,7 @@ class Receiver(object):
 
 def parse_message(message, robot_id):
     # print('parse_message: ', len(message), robot_id)
-    global bounding_box
+    global bounding_box, use_caolou_map
     marker_list = marker_msgs_pb2.MarkerList()
     marker_list.ParseFromString(message)
     MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
@@ -127,10 +129,11 @@ def parse_message(message, robot_id):
         WINDOW_WIDTH // 2 - MAP_WIDTH // 2,
         WINDOW_HEIGHT // 2 - MAP_HEIGHT // 2
     ])
+    # print(marker_list.marker_list)
     for marker in marker_list.marker_list:
         try:
-            center_pos = gps2pixel(marker.pose.position.x,
-                                   marker.pose.position.y) + offset
+            # print(marker.pose.position.x, marker.pose.position.y)
+            center_pos = gps2pixel(marker.pose.position.x, marker.pose.position.y, use_caolou_map) + offset
             orientation = R.from_quat([
                 marker.pose.orientation.x, marker.pose.orientation.y,
                 marker.pose.orientation.z, marker.pose.orientation.w
@@ -171,7 +174,7 @@ def parse_message(message, robot_id):
 
 
 def parse_odometry(message, robot_id):
-    global robot_dict
+    global robot_dict, use_caolou_map
     # print('get odometry', len(message), robot_id)
     odometry = geometry_msgs_pb2.Pose()
     odometry.ParseFromString(message)
@@ -185,21 +188,14 @@ def parse_odometry(message, robot_id):
     # print(odometry.position.x-odometry.position.x%1, 100*(odometry.position.x%1), odometry.position.y-odometry.position.y%1, 100*(odometry.position.y%1))
     # new_la, new_lo = gps60to10(odometry.position.x-odometry.position.x%1, 100*(odometry.position.x%1), odometry.position.y-odometry.position.y%1, 100*(odometry.position.y%1))
     # print(new_la, new_lo)
+
     try:
-        robot_pos = gps2pixel(odometry.position.x,
-                              odometry.position.y) + offset
-        # robot_pos = pixel2gps(odometry.position.x, odometry.position.y) + offset
+        # print('get odometry', robot_id, odometry.position.x, odometry.position.y)
+        robot_pos = gps2pixel(odometry.position.x, odometry.position.y, use_caolou_map) + offset
+        # robot_pos = pixel2gps(odometry.position.x, odometry.position.y, use_caolou_map) + offset
         # print(robot_pos)
     except:
         return
-    # print(odometry.position.x, odometry.position.y)
-    # print(odometry)
-    # robot_pos = gps2pixel(new_la, new_lo)# + offset
-    # print('robot_pos', robot_pos)
-    # robot_heading = R.from_quat([
-    #     odometry.orientation.x, odometry.orientation.y, odometry.orientation.z,
-    #     odometry.orientation.w
-    # ]).as_euler('xyz', degrees=False)[2]
     robot_heading = np.deg2rad(odometry.orientation.w)
     if robot_id in robot_dict.keys():
         robot_dict[robot_id].update_pos(robot_pos)
@@ -252,7 +248,7 @@ def send_path():
             path = path_msgs_pb2.Path()
             for i in range(len(robot.new_path_pos[:20])):
                 pose = path_msgs_pb2.Pose2D()
-                gps = pixel2gps(*robot.new_path_pos[i])
+                gps = pixel2gps(robot.new_path_pos[i][0], robot.new_path_pos[i][1], use_caolou_map)
                 pose.x = gps[0]
                 pose.y = gps[1]
                 pose.theta = 0  #robot.new_path_pos[i][2]
@@ -276,6 +272,20 @@ def send_ctrl(v, w, flag=1.):
         print('send ctrl', robot_select_id[0])
         ifm_dict[robot_select_id[0]].send_ctrl(sent_data)
 
+
+def send_balloon_pos(alt, lon, robot_id):
+    global ifm_dict, robot_dict
+    ctrl_cmd = ctrl_msgs_pb2.Ctrl()
+    ctrl_cmd.flag = 3
+    ctrl_cmd.v = alt
+    ctrl_cmd.w = lon
+    # print('send_balloon_pos:', ctrl_cmd)
+    sent_data = ctrl_cmd.SerializeToString()
+    try:
+        ifm_dict[robot_id].send_ctrl(sent_data)
+    except:
+        print('Fail to send balloon pos to robot_id:', robot_id)
+
 def send_dect(w):
     global ifm_dict
     ctrl_cmd = ctrl_msgs_pb2.Ctrl()
@@ -289,6 +299,51 @@ def send_dect(w):
         ifm_dict[robot_select_id[0]].send_ctrl(sent_data)
     else:
         print('No robot to send dect cmd !')
+
+def decode_gps(bytes_array):
+    gps = np.frombuffer(bytes_array, "float")
+    lat = gps[0]
+    lon = gps[1]
+    return lat, lon
+
+def parse_state(message, robot_id):
+    global robot_dict, use_caolou_map, temp_list
+    # print(robot_id)
+    # print('get drone state', len(message), robot_id)
+    # temp_list.add(robot_id)
+    # print(temp_list, 'drone num:', len(temp_list))
+    lat, lon = decode_gps(message)
+
+    ###################################################
+    # print(len(temp_list), robot_id)
+    if robot_id == 10:
+        # print('FFFFFFFFFFFFFFFFFFFFFFFF', lat, lon)
+        send_balloon_pos(lat, lon, 18)
+        send_balloon_pos(lat, lon, 19)
+
+    ###################################################
+
+    MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
+    offset = np.array([
+        WINDOW_WIDTH // 2 - MAP_WIDTH // 2,
+        WINDOW_HEIGHT // 2 - MAP_HEIGHT // 2
+    ])
+
+    try:
+        robot_pos = gps2pixel(lat, lon, use_caolou_map) + offset
+    except:
+        return
+
+    robot_heading = 0#np.deg2rad(odometry.orientation.w)
+    if robot_id in robot_dict.keys():
+        robot_dict[robot_id].update_pos(robot_pos)
+        robot_dict[robot_id].update_heading(robot_heading)
+    else:
+        # register new robot
+        robot_dict[robot_id] = Robot(id=robot_id,
+                                     pos=robot_pos,
+                                     heading=robot_heading,
+                                     is_drone = True)
 
 class Cloud(Informer):
     def msg_recv(self):
@@ -312,17 +367,15 @@ class Cloud(Informer):
     def send_ctrl(self, message):
         self.send(message, 'ctrl')
 
+    def state_recv(self):
+        self.recv('state', parse_state)
+
 
 def start_ifm():
     global ifm_dict
-    for i in range(1, 11):
+    for i in range(0, 20):
         ifm_dict[i] = Cloud(config='config.yaml', robot_id=i)
 
-
-# print(gps2pixel(30.259059, 120.120360))
-# print(gps2pixel(30.265143, 120.122862))
-# print(pixel2gps(807, 3450))
-# print(pixel2gps(814, 632))
 
 if __name__ == "__main__":
     pygame.init()
@@ -352,7 +405,7 @@ if __name__ == "__main__":
         drawBoundingBox(SCREEN, bounding_box, map_offset)
         drawCarNumber(SCREEN, car_number, map_offset)
         drawPath(SCREEN, robot_dict, map_offset)
-        drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick)
+        drawButton(SCREEN, use_caolou_map, use_playground_map, use_joystick)
         drawMessageBox(SCREEN, map_offset, robot_clicked, robot_clicked_id,
                        robot_dict, box_clicked, box_clicked_id, bounding_box)
         drawRectSelections(SCREEN, rect_select, rect_start_pos, rect_end_pos)
@@ -388,21 +441,33 @@ if __name__ == "__main__":
                     for robot_id in robot_select_id:
                         if robot_id in robot_dict.keys():
                             robot_dict[robot_id].update_goal(robot_goal)
-                    print(robot_goal)
-                # button: baidu map
-                elif BUTTON_BAIDU_X <= mouse[
-                        0] <= BUTTON_BAIDU_X + BUTTON_WIDTH and BUTTON_BAIDU_Y <= mouse[
-                            1] <= BUTTON_BAIDU_Y + BUTTON_HEIGHT:
-                    DISPLAY_MAP = BAIDU_MAP
-                    use_baidu_map = True
-                    use_satellite_map = False
-                # button: satellite map
-                elif BUTTON_SATELLITE_X <= mouse[
-                        0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[
-                            1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT:
-                    DISPLAY_MAP = SATELLITE_MAP
-                    use_baidu_map = False
-                    use_satellite_map = True
+
+
+                    goal_gps = pixel2gps(robot_goal[0], robot_goal[1], use_caolou_map)
+                    print('img cor:', robot_goal, 'gps cor:', goal_gps, 'xy cor:', gps2xy(goal_gps[0], goal_gps[1]))
+                    # for _ in range(10000):
+                    #     send_balloon_pos(goal_gps[0], goal_gps[1], 19)
+                    #     sleep(0.05)
+                    # print('send over')
+                    # MAP_WIDTH, MAP_HEIGHT = DISPLAY_MAP.get_size()
+                    # print(robot_goal - np.array([
+                    # WINDOW_WIDTH // 2 - MAP_WIDTH // 2,
+                    # WINDOW_HEIGHT // 2 - MAP_HEIGHT // 2
+                    # ]))
+                # button: caolou map
+                elif BUTTON_CAOLOU_X <= mouse[
+                        0] <= BUTTON_CAOLOU_X + BUTTON_WIDTH and BUTTON_CAOLOU_Y <= mouse[
+                            1] <= BUTTON_CAOLOU_Y + BUTTON_HEIGHT:
+                    DISPLAY_MAP = CAOLOU_MAP
+                    use_caolou_map = True
+                    use_playground_map = False
+                # button: playground map
+                elif BUTTON_PLAYGROUND_X <= mouse[
+                        0] <= BUTTON_PLAYGROUND_X + BUTTON_WIDTH and BUTTON_PLAYGROUND_Y <= mouse[
+                            1] <= BUTTON_PLAYGROUND_Y + BUTTON_HEIGHT:
+                    DISPLAY_MAP = PLAYGROUND_MAP
+                    use_caolou_map = False
+                    use_playground_map = True
                 # button: joystick mode
                 elif BUTTON_JOYSTICK_X <= mouse[
                         0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[

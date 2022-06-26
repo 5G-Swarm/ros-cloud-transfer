@@ -14,6 +14,7 @@ HOST_ADDRESS = '127.0.0.1'
 BLACK = (0, 0, 0)
 GREY = (192, 192, 192)
 BLUE = (0, 0, 255)
+LIGHT_BLUE = (20, 67, 187)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 WHITE = (255, 255, 255)
@@ -28,10 +29,10 @@ BUTTON_LIGHT = (170, 170, 170)
 BUTTON_DARK = (100, 100, 100)
 BUTTON_GOAL_X = 50
 BUTTON_GOAL_Y = 50
-BUTTON_BAIDU_X = 50
-BUTTON_BAIDU_Y = 200
-BUTTON_SATELLITE_X = 50
-BUTTON_SATELLITE_Y = 350
+BUTTON_CAOLOU_X = 50
+BUTTON_CAOLOU_Y = 200
+BUTTON_PLAYGROUND_X = 50
+BUTTON_PLAYGROUND_Y = 350
 BUTTON_JOYSTICK_X = 50
 BUTTON_JOYSTICK_Y = 500
 
@@ -62,17 +63,19 @@ def gps2xy(lat,lon):
 def xy2gps(x, y):
     return utm.to_latlon(x, y, 51, 'R')
 
-def gps2pixel(latitude, longtitude):
-    # p1_pixel = np.array([380,1330])
-    p1_pixel = np.array([883-410, 1501-177])
-    # new_la, new_lo = 30.26124060928429,120.11707073496261
-    new_la, new_lo = 30.2612853207524,120.11701774258434
-    p1_gps = np.array(gps2xy(new_la, new_lo))
-    # p2_pixel = np.array([880,140])
-    p2_pixel = np.array([1142-410, 710-177])
-    # new_la2, new_lo2 = 30.26208464,120.11737484
-    new_la2, new_lo2 = 30.26181364827796,120.117264702137
-    p2_gps = np.array(gps2xy(new_la2, new_lo2))
+def gps2pixel(latitude, longtitude, use_caolou_map):
+    if use_caolou_map:
+        p1_pixel = np.array([883-410, 1501-177])
+        p1_gps = np.array([30.2612853207524, 120.11701774258434])
+        p2_pixel = np.array([1142-410, 710-177])
+        p2_gps = np.array([30.26181364827796,120.117264702137])
+    else:
+        p1_pixel = np.array([915, 1433])
+        p1_gps = np.array([30.2653633, 120.1195315])
+        p2_pixel = np.array([1149, 595])
+        p2_gps = np.array([30.2662311, 120.1198195])
+    p1_gps = np.array(gps2xy(*p1_gps))
+    p2_gps = np.array(gps2xy(*p2_gps))
     vec_pixel = p2_pixel - p1_pixel
     vec_gps = p2_gps - p1_gps
     p = np.array(gps2xy(latitude, longtitude))
@@ -85,16 +88,19 @@ def gps2pixel(latitude, longtitude):
     pixel_pos = np.array([int(pixel_pos[0]), int(pixel_pos[1])])
     return pixel_pos
 
-def pixel2gps(x, y):
-    # p1_pixel = np.array([380,1330])
-    # p1_gps = np.array(gps2xy(30.26124060928429,120.11707073496261))
-    # p2_pixel = np.array([880,140])
-    # p2_gps = np.array(gps2xy(30.26208464,120.11737484))
-    p1_pixel = np.array([883-410, 1501-177])
-    p1_gps = np.array(gps2xy(30.2612853207524,120.11701774258434))
-    p2_pixel = np.array([1142-410, 710-177])
-    p2_gps = np.array(gps2xy(30.26181364827796,120.117264702137))
-
+def pixel2gps(x, y, use_caolou_map):
+    if use_caolou_map:
+        p1_pixel = np.array([883-410, 1501-177])
+        p1_gps = np.array([30.2612853207524, 120.11701774258434])
+        p2_pixel = np.array([1142-410, 710-177])
+        p2_gps = np.array([30.26181364827796,120.117264702137])
+    else:
+        p1_pixel = np.array([915, 1433])
+        p1_gps = np.array([30.2653633, 120.1195315])
+        p2_pixel = np.array([1149, 595])
+        p2_gps = np.array([30.2662311, 120.1198195])
+    p1_gps = np.array(gps2xy(*p1_gps))
+    p2_gps = np.array(gps2xy(*p2_gps))
     vec_pixel = p2_pixel - p1_pixel
     vec_gps = p2_gps - p1_gps
     pixel_pos = np.array([x, y])
@@ -188,8 +194,14 @@ def drawRobots(SCREEN, robot_dict, map_offset):
     robot_dict_copy = robot_dict.copy()
     for idx, robot in robot_dict_copy.items():
         if robot.pos is not None and robot.heading is not None:
-            cmd = [0.5]
-            pygame.draw.circle(SCREEN, GREEN, robot.pos + map_offset, ROBOT_SIZE)
+            # cmd = [0.5]
+            if not robot.is_drone:
+                pygame.draw.circle(SCREEN, (80, 255, 120), robot.pos + map_offset, ROBOT_SIZE)
+            else:
+                if idx == 10:
+                    pygame.draw.circle(SCREEN, (255, 128, 128), robot.pos + map_offset, ROBOT_SIZE)
+                else:
+                    pygame.draw.circle(SCREEN, LIGHT_BLUE, robot.pos + map_offset, ROBOT_SIZE)
             # pygame.draw.line(SCREEN, BLUE, robot.pos + map_offset, robot.pos + map_offset + min(max(40*cmd[0], 25), 40)*np.array([np.cos(robot.heading+np.pi/2), -np.sin(robot.heading+np.pi/2)]), 5)
             FONT = pygame.font.SysFont('Corbel', 50)
             text = FONT.render('{}'.format(idx), True, WHITE)
@@ -216,7 +228,7 @@ def drawPath(SCREEN, robot_dict, map_offset):
         if len(robot.path_pos) > 1:
             pygame.draw.lines(SCREEN, RED, False, robot.path_pos + map_offset, 10)
 
-def drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick):
+def drawButton(SCREEN, use_caolou_map, use_playground_map, use_joystick):
     # font settings
     FONT = pygame.font.SysFont('Corbel', 75)
 
@@ -230,20 +242,20 @@ def drawButton(SCREEN, use_baidu_map, use_satellite_map, use_joystick):
     else:
         pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_GOAL_X, BUTTON_GOAL_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     SCREEN.blit(text, (BUTTON_GOAL_X+45, BUTTON_GOAL_Y+25))
-    # button: baidu map
-    text = FONT.render('BAIDU', True, WHITE)
-    if (BUTTON_BAIDU_X <= mouse[0] <= BUTTON_BAIDU_X + BUTTON_WIDTH and BUTTON_BAIDU_Y <= mouse[1] <= BUTTON_BAIDU_Y + BUTTON_HEIGHT) or use_baidu_map:
-        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_BAIDU_X, BUTTON_BAIDU_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    # button: caolou map
+    text = FONT.render('CAOLOU', True, WHITE)
+    if (BUTTON_CAOLOU_X <= mouse[0] <= BUTTON_CAOLOU_X + BUTTON_WIDTH and BUTTON_CAOLOU_Y <= mouse[1] <= BUTTON_CAOLOU_Y + BUTTON_HEIGHT) or use_caolou_map:
+        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_CAOLOU_X, BUTTON_CAOLOU_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     else:
-        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_BAIDU_X, BUTTON_BAIDU_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
-    SCREEN.blit(text, (BUTTON_BAIDU_X+60, BUTTON_BAIDU_Y+25))
-    # button: satellite map
-    text = FONT.render('SATELLITE', True, WHITE)
-    if (BUTTON_SATELLITE_X <= mouse[0] <= BUTTON_SATELLITE_X + BUTTON_WIDTH and BUTTON_SATELLITE_Y <= mouse[1] <= BUTTON_SATELLITE_Y + BUTTON_HEIGHT) or use_satellite_map:
-        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_SATELLITE_X, BUTTON_SATELLITE_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_CAOLOU_X, BUTTON_CAOLOU_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    SCREEN.blit(text, (BUTTON_CAOLOU_X+40, BUTTON_CAOLOU_Y+25))
+    # button: playground map
+    text = pygame.font.SysFont('Corbel', 60).render('PLAYGROUND', True, WHITE)
+    if (BUTTON_PLAYGROUND_X <= mouse[0] <= BUTTON_PLAYGROUND_X + BUTTON_WIDTH and BUTTON_PLAYGROUND_Y <= mouse[1] <= BUTTON_PLAYGROUND_Y + BUTTON_HEIGHT) or use_playground_map:
+        pygame.draw.rect(SCREEN, BUTTON_LIGHT, [BUTTON_PLAYGROUND_X, BUTTON_PLAYGROUND_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
     else:
-        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_SATELLITE_X, BUTTON_SATELLITE_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
-    SCREEN.blit(text, (BUTTON_SATELLITE_X+10, BUTTON_SATELLITE_Y+25))
+        pygame.draw.rect(SCREEN, BUTTON_DARK, [BUTTON_PLAYGROUND_X, BUTTON_PLAYGROUND_Y, BUTTON_WIDTH, BUTTON_HEIGHT])
+    SCREEN.blit(text, (BUTTON_PLAYGROUND_X+10, BUTTON_PLAYGROUND_Y+30))
     # button: joystick mode
     text = FONT.render('JOYSTICK', True, WHITE)
     if (BUTTON_JOYSTICK_X <= mouse[0] <= BUTTON_JOYSTICK_X + BUTTON_WIDTH and BUTTON_JOYSTICK_Y <= mouse[1] <= BUTTON_JOYSTICK_Y + BUTTON_HEIGHT) or use_joystick:
@@ -326,7 +338,7 @@ def sendGoal(DISPLAY_MAP, robot_dict, robot_select_id):
         goal_sock.sendto(bytes(goal_str, 'ascii'), (HOST_ADDRESS, 23334))
 
 class Robot():
-    def __init__(self, id, pos=None, heading=None, cmd=None, img=None, path_pos=[], new_path_pos=[], goal=None):
+    def __init__(self, id, pos=None, heading=None, cmd=None, img=None, is_drone = False, path_pos=[], new_path_pos=[], goal=None):
         self.id = id
         self.pos = pos
         self.heading = heading
@@ -335,6 +347,7 @@ class Robot():
         self.path_pos = path_pos
         self.new_path_pos = new_path_pos
         self.goal = goal
+        self.is_drone = is_drone
 
     def update_pos(self, pos):
         self.pos = pos
